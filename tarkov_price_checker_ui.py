@@ -557,8 +557,18 @@ class TarkovPriceCheckerUI:
             # Small delay to let keys be released
             time.sleep(0.3)
             
-            # Take screenshot
-            filepath = self.take_screenshot()
+            # Get mouse position for ROI calculation
+            mouse_x, mouse_y = self.mouse_controller.position
+            
+            # Calculate ROI region (same as in extract_item_name_from_image)
+            roi_x = max(0, mouse_x + 40)
+            roi_y = max(0, mouse_y - 80)
+            roi_width = 900
+            roi_height = 150
+            
+            # Take screenshot of only the ROI region
+            region = (roi_x, roi_y, roi_width, roi_height)
+            filepath = self.take_screenshot(region=region, filename="last_ocr_region.png")
             self.log(f"✓ Screenshot saved: {filepath}", '#00ff00')
             
             # Use OCR to detect item name (always enabled)
@@ -660,40 +670,11 @@ class TarkovPriceCheckerUI:
             if not self.initialize_ocr():
                 return None
             
-            # Load image
-            img = cv2.imread(image_path)
-            if img is None:
+            # Load the ROI screenshot directly
+            roi = cv2.imread(image_path)
+            if roi is None:
                 self.log("✗ Could not load screenshot", '#ff0000')
                 return None
-            
-            height, width = img.shape[:2]
-            
-            # Get mouse position at time of capture
-            mouse_x, mouse_y = self.mouse_controller.position
-            
-            # Define region of interest based on Tarkov tooltip position
-            # Looking at the screenshot: red dot (mouse) on item icon,
-            # text appears to the right and slightly up from cursor
-            # Need wider capture to get full item names like "Gen4 body armor (High Mobility Kit, Tan)"
-            roi_x = max(0, mouse_x + 40)  # Start 40px right of cursor (moved left from 70px)
-            roi_y = max(0, mouse_y - 80)  # Start 80px above cursor for better coverage
-            roi_width = 900  # Capture 900px width (increased from 700px for full item names)
-            roi_height = 150  # Capture 150px height (increased from 100px for complete text)
-            
-            # Make sure we don't go out of bounds
-            if roi_x + roi_width > width:
-                roi_x = max(0, width - roi_width)
-            if roi_y + roi_height > height:
-                roi_y = max(0, height - roi_height)
-            roi_width = min(roi_width, width - roi_x)
-            roi_height = min(roi_height, height - roi_y)
-            
-            # Crop to region of interest
-            roi = img[roi_y:roi_y+roi_height, roi_x:roi_x+roi_width]
-            
-            # Save ROI for debugging (optional)
-            debug_path = os.path.join(self.screenshots_dir, "last_ocr_region.png")
-            cv2.imwrite(debug_path, roi)
             
             # Convert to grayscale
             gray = cv2.cvtColor(roi, cv2.COLOR_BGR2GRAY)
@@ -705,30 +686,34 @@ class TarkovPriceCheckerUI:
             # Also try inverted threshold
             _, thresh_inv = cv2.threshold(gray, 0, 255, cv2.THRESH_BINARY_INV + cv2.THRESH_OTSU)
             
-            # Perform OCR on both versions
-            results1 = self.ocr_reader.readtext(thresh, detail=0)
-            results2 = self.ocr_reader.readtext(thresh_inv, detail=0)
-            results3 = self.ocr_reader.readtext(roi, detail=0)
+            # Perform OCR on the threshold version (best for Tarkov's light text on dark background)
+            results = self.ocr_reader.readtext(thresh, detail=0)
             
-            # Combine all results
-            all_results = results1 + results2 + results3
-            
-            if all_results:
-                # For multi-line items, combine all detected text parts
-                # Filter out UI elements first
+            if results:
+                # Filter out UI elements
                 unwanted_phrases = [
                     'inspect', 'examine', 'filter', 'search', 'modding', 
                     'edit build', 'discard', 'use', 'equip', 'move',
                     'context menu', 'fold', 'unfold', 'sort', 'filter by'
                 ]
                 
-                # Filter and combine results
+                # Filter and deduplicate results
                 filtered_results = []
-                for text in all_results:
-                    text_lower = text.lower()
-                    is_unwanted = any(phrase in text_lower for phrase in unwanted_phrases)
-                    if not is_unwanted and len(text.strip()) > 2:
-                        filtered_results.append(text.strip())
+                seen = set()
+                for text in results:
+                    text_clean = text.strip()
+                    text_lower = text_clean.lower()
+                    
+                    # Skip duplicates, unwanted phrases, and very short text
+                    if text_lower in seen:
+                        continue
+                    if any(phrase in text_lower for phrase in unwanted_phrases):
+                        continue
+                    if len(text_clean) < 3:
+                        continue
+                    
+                    seen.add(text_lower)
+                    filtered_results.append(text_clean)
                 
                 if not filtered_results:
                     self.log("⚠ No valid text detected in screenshot", '#ff9800')
