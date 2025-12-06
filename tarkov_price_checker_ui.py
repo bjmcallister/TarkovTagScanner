@@ -30,10 +30,21 @@ class TarkovPriceCheckerUI:
         self.api_key = api_key  # Not needed for tarkov.dev but kept for compatibility
         self.headers = {'Content-Type': 'application/json'}
         
-        # Create screenshots directory
-        self.screenshots_dir = "screenshots"
-        if not os.path.exists(self.screenshots_dir):
-            os.makedirs(self.screenshots_dir)
+        # Create screenshots directory in user's temp folder to avoid permission issues
+        import tempfile
+        user_temp = tempfile.gettempdir()
+        self.screenshots_dir = os.path.join(user_temp, "WabbajackTarkov", "screenshots")
+        try:
+            if not os.path.exists(self.screenshots_dir):
+                os.makedirs(self.screenshots_dir, exist_ok=True)
+        except Exception as e:
+            # Fallback to current directory if temp fails
+            self.screenshots_dir = "screenshots"
+            if not os.path.exists(self.screenshots_dir):
+                try:
+                    os.makedirs(self.screenshots_dir, exist_ok=True)
+                except:
+                    pass  # Continue without screenshots directory
         
         # Hotkey configuration
         self.hotkey_enabled = False
