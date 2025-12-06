@@ -10,6 +10,8 @@
 
 [Features](#features) • [Installation](#installation) • [Usage](#usage) • [Hotkeys](#hotkeys) • [FAQ](#faq)
 
+<a href="https://www.buymeacoffee.com/allisteras" target="_blank"><img src="https://cdn.buymeacoffee.com/buttons/v2/default-green.png" alt="Buy Me A Coffee" style="height: 45px !important;width: 162px !important;" ></a>
+
 </div>
 
 ---
@@ -243,6 +245,16 @@ This tool is for educational and personal use only.
 
 ---
 
+## ☕ Support the Project
+
+If you find this tool useful, consider buying me a coffee! ☕
+
+[![Buy Me A Coffee](https://cdn.buymeacoffee.com/buttons/v2/default-green.png)](https://www.buymeacoffee.com/allisteras)
+
+Your support helps keep the project maintained and updated!
+
+---
+
 ## 🙏 Credits
 
 - **Tarkov.dev API** - Free GraphQL API by The Hideout: https://tarkov.dev
@@ -256,6 +268,6 @@ This tool is for educational and personal use only.
 
 **⚡ WABBAJACK - Making Tarkov Trading Easier ⚡**
 
-[Report Bug](../../issues) • [Request Feature](../../issues)
+[Report Bug](../../issues) • [Request Feature](../../issues) • [Buy Me a Coffee](https://www.buymeacoffee.com/allisteras)
 
 </div>

@@ -263,6 +263,9 @@ class TarkovPriceCheckerUI:
   • No administrator privileges required
   • No API key required - Uses tarkov.dev free API
 
+>>> SUPPORT THE PROJECT:
+  ☕ Buy Me a Coffee: buymeacoffee.com/allisteras
+
 >>> STATUS: AWAITING INPUT...
         """
         self.results_text.insert('1.0', instructions)
