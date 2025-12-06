@@ -80,7 +80,7 @@ class TarkovPriceCheckerUI:
         
         # Settings
         self.settings_file = os.path.join(user_temp, "WabbajackTarkov", "settings.pkl")
-        self.current_version = "1.1.0"
+        self.current_version = "1.3.0"
         self.settings = {
             'theme_color': '#00ff41',
             'bg_color': '#000000',
@@ -694,10 +694,10 @@ class TarkovPriceCheckerUI:
             # Looking at the screenshot: red dot (mouse) on item icon,
             # text appears to the right and slightly up from cursor
             # Need wider capture to get full item names like "Gen4 body armor (High Mobility Kit, Tan)"
-            roi_x = max(0, mouse_x + 70)  # Start 70px right of cursor (where text begins)
-            roi_y = max(0, mouse_y - 70)  # Start 70px above cursor for better coverage
-            roi_width = 700  # Capture 700px width (wider for full item names with descriptions)
-            roi_height = 100  # Capture 100px height (taller for complete text)
+            roi_x = max(0, mouse_x + 40)  # Start 40px right of cursor (moved left from 70px)
+            roi_y = max(0, mouse_y - 80)  # Start 80px above cursor for better coverage
+            roi_width = 900  # Capture 900px width (increased from 700px for full item names)
+            roi_height = 150  # Capture 150px height (increased from 100px for complete text)
             
             # Make sure we don't go out of bounds
             if roi_x + roi_width > width:
@@ -816,9 +816,10 @@ class TarkovPriceCheckerUI:
             game_mode = 'regular' if self.game_mode == 'PVP' else 'pve'
             
             # GraphQL query for Tarkov.dev API
+            # Using 'items' query instead of deprecated 'itemsByName'
             query = """
-            query ItemsByName($name: String!, $gameMode: GameMode) {
-              itemsByName(name: $name, gameMode: $gameMode) {
+            query Items($name: String!, $gameMode: GameMode) {
+              items(name: $name, gameMode: $gameMode) {
                 name
                 shortName
                 width
@@ -855,8 +856,15 @@ class TarkovPriceCheckerUI:
             
             data = response.json()
             
-            if data and 'data' in data and data['data']['itemsByName'] and len(data['data']['itemsByName']) > 0:
-                item = data['data']['itemsByName'][0]
+            # Check for GraphQL errors
+            if 'errors' in data:
+                error_msg = data['errors'][0].get('message', 'Unknown error')
+                self.log(f">>> ERROR: GraphQL error - {error_msg}", '#ff0000')
+                self.update_status("Query error", '#ff0000')
+                return
+            
+            if data and 'data' in data and data['data']['items'] and len(data['data']['items']) > 0:
+                item = data['data']['items'][0]
                 # Cache the result
                 self.cache_item(cache_key, item)
                 self.display_item_price(item)
@@ -1330,19 +1338,19 @@ class TarkovPriceCheckerUI:
                 latest_version = latest['tag_name'].lstrip('v')
                 
                 if version.parse(latest_version) > version.parse(self.current_version):
-                    self.log(f\"\\n>>> UPDATE AVAILABLE: v{latest_version}\", '#ffff00')
-                    self.log(f\">>> Current version: v{self.current_version}\", '#ffffff')
-                    self.log(f\">>> Download: {latest['html_url']}\", '#00ffff')
+                    self.log(f"\n>>> UPDATE AVAILABLE: v{latest_version}", '#ffff00')
+                    self.log(f">>> Current version: v{self.current_version}", '#ffffff')
+                    self.log(f">>> Download: {latest['html_url']}", '#00ffff')
                     
-                    if messagebox.askyesno(\"Update Available\", 
-                        f\"New version v{latest_version} is available!\\n\\nWould you like to download it?\"):
+                    if messagebox.askyesno("Update Available", 
+                        f"New version v{latest_version} is available!\n\nWould you like to download it?"):
                         import webbrowser
                         webbrowser.open(latest['html_url'])
         except Exception as e:
             pass  # Silently fail for update check
     
     def minimize_to_tray(self):
-        \"\"\"Minimize window to system tray\"\"\"
+        """Minimize window to system tray"""
         if not TRAY_AVAILABLE:
             self.root.iconify()
             return
@@ -1355,34 +1363,34 @@ class TarkovPriceCheckerUI:
                 icon_image = PILImage.new('RGB', (64, 64), color='black')
                 from PIL import ImageDraw
                 draw = ImageDraw.Draw(icon_image)
-                draw.text((10, 20), \"TTS\", fill='#00ff41')
+                draw.text((10, 20), "TTS", fill='#00ff41')
                 
                 menu = Menu(
                     MenuItem('Show', self.show_from_tray),
                     MenuItem('Exit', self.exit_from_tray)
                 )
                 
-                self.tray_icon = Icon(\"TarkovTagScanner\", icon_image, \"Tarkov Tag Scanner\", menu)
+                self.tray_icon = Icon("TarkovTagScanner", icon_image, "Tarkov Tag Scanner", menu)
                 threading.Thread(target=self.tray_icon.run, daemon=True).start()
         except Exception as e:
-            self.log(f\">>> Tray icon error: {e}\", '#ff0000')
+            self.log(f">>> Tray icon error: {e}", '#ff0000')
             self.root.iconify()
     
     def show_from_tray(self):
-        \"\"\"Restore window from tray\"\"\"
+        """Restore window from tray"""
         self.root.after(0, self.root.deiconify)
     
     def exit_from_tray(self):
-        \"\"\"Exit from tray icon\"\"\"
+        """Exit from tray icon"""
         if self.tray_icon:
             self.tray_icon.stop()
         self.root.after(0, self.on_closing)
     
     def open_settings(self):
-        \"\"\"Open settings dialog\"\"\"
+        """Open settings dialog"""
         settings_window = tk.Toplevel(self.root)
-        settings_window.title(\"Settings\")
-        settings_window.geometry(\"500x400\")
+        settings_window.title("Settings")
+        settings_window.geometry("500x400")
         settings_window.configure(bg='#000000')
         settings_window.transient(self.root)
         settings_window.grab_set()
@@ -1390,8 +1398,8 @@ class TarkovPriceCheckerUI:
         # Title
         tk.Label(
             settings_window,
-            text=\"SETTINGS\",
-            font=(\"Courier New\", 14, \"bold\"),
+            text="SETTINGS",
+            font=("Courier New", 14, "bold"),
             bg='#000000',
             fg=self.settings['theme_color']
         ).pack(pady=15)
@@ -1402,17 +1410,17 @@ class TarkovPriceCheckerUI:
         
         tk.Label(
             theme_frame,
-            text=\"Theme Color:\",
-            font=(\"Courier New\", 10, \"bold\"),
+            text="Theme Color:",
+            font=("Courier New", 10, "bold"),
             bg='#001100',
             fg=self.settings['theme_color']
         ).pack(side='left')
         
         tk.Button(
             theme_frame,
-            text=\"Choose Color\",
+            text="Choose Color",
             command=lambda: self.choose_theme_color(settings_window),
-            font=(\"Courier New\", 9),
+            font=("Courier New", 9),
             bg='#003300',
             fg=self.settings['theme_color']
         ).pack(side='right', padx=5)
@@ -1423,8 +1431,8 @@ class TarkovPriceCheckerUI:
         
         tk.Label(
             font_frame,
-            text=\"UI Font Size:\",
-            font=(\"Courier New\", 10, \"bold\"),
+            text="UI Font Size:",
+            font=("Courier New", 10, "bold"),
             bg='#001100',
             fg=self.settings['theme_color']
         ).pack(side='left')
@@ -1436,7 +1444,7 @@ class TarkovPriceCheckerUI:
             to=16,
             textvariable=font_var,
             width=5,
-            font=(\"Courier New\", 10),
+            font=("Courier New", 10),
             bg='#000000',
             fg=self.settings['theme_color']
         )
@@ -1448,8 +1456,8 @@ class TarkovPriceCheckerUI:
         
         tk.Label(
             overlay_frame,
-            text=\"Overlay Font Size:\",
-            font=(\"Courier New\", 10, \"bold\"),
+            text="Overlay Font Size:",
+            font=("Courier New", 10, "bold"),
             bg='#001100',
             fg=self.settings['theme_color']
         ).pack(side='left')
@@ -1461,7 +1469,7 @@ class TarkovPriceCheckerUI:
             to=20,
             textvariable=overlay_var,
             width=5,
-            font=(\"Courier New\", 10),
+            font=("Courier New", 10),
             bg='#000000',
             fg=self.settings['theme_color']
         )
@@ -1475,14 +1483,14 @@ class TarkovPriceCheckerUI:
             self.settings['font_size'] = font_var.get()
             self.settings['overlay_font_size'] = overlay_var.get()
             self.save_settings()
-            messagebox.showinfo(\"Settings\", \"Settings saved! Restart the app to apply all changes.\")
+            messagebox.showinfo("Settings", "Settings saved! Restart the app to apply all changes.")
             settings_window.destroy()
         
         tk.Button(
             button_frame,
-            text=\"[ SAVE ]\",
+            text="[ SAVE ]",
             command=apply_settings,
-            font=(\"Courier New\", 10, \"bold\"),
+            font=("Courier New", 10, "bold"),
             bg='#003300',
             fg=self.settings['theme_color'],
             padx=20,
@@ -1491,9 +1499,9 @@ class TarkovPriceCheckerUI:
         
         tk.Button(
             button_frame,
-            text=\"[ CANCEL ]\",
+            text="[ CANCEL ]",
             command=settings_window.destroy,
-            font=(\"Courier New\", 10, \"bold\"),
+            font=("Courier New", 10, "bold"),
             bg='#330000',
             fg='#ff4444',
             padx=20,
@@ -1501,11 +1509,11 @@ class TarkovPriceCheckerUI:
         ).pack(side='left', padx=5)
     
     def choose_theme_color(self, parent):
-        \"\"\"Open color chooser for theme\"\"\"
+        """Open color chooser for theme"""
         color = colorchooser.askcolor(
             initialcolor=self.settings['theme_color'],
             parent=parent,
-            title=\"Choose Theme Color\"
+            title="Choose Theme Color"
         )
         if color[1]:
             self.settings['theme_color'] = color[1]
@@ -1513,7 +1521,7 @@ class TarkovPriceCheckerUI:
             self.open_settings()  # Reopen with new color
     
     def on_closing(self):
-        \"\"\"Handle window closing\"\"\"
+        """Handle window closing"""
         if self.overlay_window:
             try:
                 self.overlay_window.destroy()
