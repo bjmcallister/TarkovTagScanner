@@ -637,10 +637,10 @@ class TarkovPriceCheckerUI:
             # Looking at the screenshot: red dot (mouse) on item icon,
             # text appears to the right and slightly up from cursor
             # Need wider capture to get full item names like "Gen4 body armor (High Mobility Kit, Tan)"
-            roi_x = max(0, mouse_x + 80)  # Start 80px right of cursor (where text begins)
-            roi_y = max(0, mouse_y - 60)  # Start 60px above cursor
-            roi_width = 500  # Capture 500px width (wider for full item names)
-            roi_height = 80  # Capture 80px height (taller for complete text)
+            roi_x = max(0, mouse_x + 70)  # Start 70px right of cursor (where text begins)
+            roi_y = max(0, mouse_y - 70)  # Start 70px above cursor for better coverage
+            roi_width = 700  # Capture 700px width (wider for full item names with descriptions)
+            roi_height = 100  # Capture 100px height (taller for complete text)
             
             # Make sure we don't go out of bounds
             if roi_x + roi_width > width:
