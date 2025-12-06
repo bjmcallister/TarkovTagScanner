@@ -264,21 +264,6 @@ class TarkovPriceCheckerUI:
         )
         self.configure_button.pack(side='left', padx=5)
         
-        # OCR toggle
-        self.ocr_var = tk.BooleanVar(value=True)
-        self.ocr_checkbox = tk.Checkbutton(
-            button_frame,
-            text="[X] OCR DETECTION",
-            variable=self.ocr_var,
-            font=("Courier New", 10, "bold"),
-            bg='#001100',
-            fg='#00ff41',
-            selectcolor='#000000',
-            activebackground='#001100',
-            activeforeground='#00ff41'
-        )
-        self.ocr_checkbox.pack(side='left', padx=15)
-        
         # PVP/PVE mode toggle
         self.mode_var = tk.StringVar(value='PVP')
         mode_label = tk.Label(
@@ -576,21 +561,17 @@ class TarkovPriceCheckerUI:
             filepath = self.take_screenshot()
             self.log(f"✓ Screenshot saved: {filepath}", '#00ff00')
             
-            # Try OCR if enabled
-            if self.ocr_var.get():
-                self.log("🔍 Detecting item name from screenshot...", '#ffff00')
-                self.update_status("Reading item name with OCR...", '#ffff00')
-                
-                item_name = self.extract_item_name_from_image(filepath)
-                
-                if item_name:
-                    self.log(f"✓ Detected item name: '{item_name}'", '#00ff00')
-                    self.search_item(item_name)
-                else:
-                    self.log("⚠ Could not detect item name, please enter manually", '#ff9800')
-                    self.root.after(0, self.prompt_for_item_name)
+            # Use OCR to detect item name (always enabled)
+            self.log("🔍 Detecting item name from screenshot...", '#ffff00')
+            self.update_status("Reading item name with OCR...", '#ffff00')
+            
+            item_name = self.extract_item_name_from_image(filepath)
+            
+            if item_name:
+                self.log(f"✓ Detected item name: '{item_name}'", '#00ff00')
+                self.search_item(item_name)
             else:
-                # Get item name from user
+                self.log("⚠ Could not detect item name, please enter manually", '#ff9800')
                 self.root.after(0, self.prompt_for_item_name)
             
         except Exception as e:
@@ -733,31 +714,31 @@ class TarkovPriceCheckerUI:
             all_results = results1 + results2 + results3
             
             if all_results:
-                # Find the longest coherent text (likely the item name)
-                longest_text = max(all_results, key=len)
-                
-                # Clean up the text
-                item_name = longest_text.strip()
-                
-                # Fix common OCR misreads
-                item_name = self.fix_ocr_errors(item_name)
-                
-                # Remove common UI elements that might be detected
+                # For multi-line items, combine all detected text parts
+                # Filter out UI elements first
                 unwanted_phrases = [
                     'inspect', 'examine', 'filter', 'search', 'modding', 
                     'edit build', 'discard', 'use', 'equip', 'move',
-                    'context menu', 'fold', 'unfold'
+                    'context menu', 'fold', 'unfold', 'sort', 'filter by'
                 ]
                 
-                item_name_lower = item_name.lower()
-                for phrase in unwanted_phrases:
-                    if phrase in item_name_lower:
-                        # Try to find item name before the unwanted phrase
-                        parts = item_name.split()
-                        filtered_parts = [p for p in parts if phrase not in p.lower()]
-                        if filtered_parts:
-                            item_name = ' '.join(filtered_parts)
+                # Filter and combine results
+                filtered_results = []
+                for text in all_results:
+                    text_lower = text.lower()
+                    is_unwanted = any(phrase in text_lower for phrase in unwanted_phrases)
+                    if not is_unwanted and len(text.strip()) > 2:
+                        filtered_results.append(text.strip())
                 
+                if not filtered_results:
+                    self.log("⚠ No valid text detected in screenshot", '#ff9800')
+                    return None
+                
+                # Combine all parts with space (handles multi-line item names)
+                item_name = ' '.join(filtered_results)
+                
+                # Fix common OCR misreads
+                item_name = self.fix_ocr_errors(item_name)
                 item_name = item_name.strip()
                 
                 if len(item_name) > 2:  # Must be at least 3 characters
@@ -1009,9 +990,28 @@ class TarkovPriceCheckerUI:
         self.overlay_window.attributes('-topmost', True)  # Always on top
         self.overlay_window.configure(bg='#000000')
         
+        # Get screen dimensions
+        screen_width = self.overlay_window.winfo_screenwidth()
+        screen_height = self.overlay_window.winfo_screenheight()
+        
+        # Estimate overlay size (width ~400px, height ~250px)
+        overlay_width = 400
+        overlay_height = 250
+        
         # Position near mouse (offset to avoid covering item)
         overlay_x = mouse_x + 20
         overlay_y = mouse_y + 20
+        
+        # Keep overlay on screen - adjust if too close to edges
+        if overlay_x + overlay_width > screen_width:
+            overlay_x = mouse_x - overlay_width - 20  # Position to left of cursor
+        if overlay_y + overlay_height > screen_height:
+            overlay_y = screen_height - overlay_height - 20  # Position above cursor
+        
+        # Ensure minimum position
+        overlay_x = max(10, overlay_x)
+        overlay_y = max(10, overlay_y)
+        
         self.overlay_window.geometry(f"+{overlay_x}+{overlay_y}")
         
         # Create frame with border
@@ -1072,21 +1072,6 @@ class TarkovPriceCheckerUI:
             )
             size_label.pack(anchor='w')
         
-        # 48h change (GraphQL provides changeLast48hPercent)
-        diff48h = item_data.get('changeLast48hPercent', 0)
-        if diff48h is not None:
-            change_color = '#00ff41' if diff48h >= 0 else '#ff0000'
-            change_symbol = '▲' if diff48h >= 0 else '▼'
-            change_label = tk.Label(
-                inner_frame,
-                text=f"{change_symbol} 48H: {diff48h:.2f}%",
-                font=("Courier New", 9),
-                bg='#000000',
-                fg=change_color,
-                justify='left'
-            )
-            change_label.pack(anchor='w', pady=(3, 0))
-        
         # Trader price (get best from sellFor array)
         sell_for = item_data.get('sellFor', [])
         if sell_for and len(sell_for) > 0:
@@ -1122,7 +1107,7 @@ class TarkovPriceCheckerUI:
                 self.overlay_window = None
         
         self.overlay_window.bind('<Button-1>', close_overlay)
-        for widget in [frame, inner_frame, name_label, price_label, change_label, close_info]:
+        for widget in [frame, inner_frame, name_label, price_label, close_info]:
             widget.bind('<Button-1>', close_overlay)
         
         # Auto-close after 5 seconds
