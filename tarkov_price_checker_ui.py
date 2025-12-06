@@ -680,26 +680,49 @@ class TarkovPriceCheckerUI:
             gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
             
             # Detect the black tooltip box with white border
-            # Tarkov tooltips are dark (near black) with white/light borders
-            # First, find dark regions
-            _, dark_mask = cv2.threshold(gray, 50, 255, cv2.THRESH_BINARY_INV)
+            # Tarkov tooltips have white/light borders around dark boxes
+            # Use edge detection to find the border
+            edges = cv2.Canny(gray, 100, 200)
             
-            # Find contours (boxes)
-            contours, _ = cv2.findContours(dark_mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+            # Dilate edges to connect nearby edge pixels
+            kernel = np.ones((3, 3), np.uint8)
+            edges_dilated = cv2.dilate(edges, kernel, iterations=2)
             
-            # Find the largest dark rectangular region (likely the tooltip)
+            # Find contours from edges
+            contours, _ = cv2.findContours(edges_dilated, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+            
+            # Find the best tooltip candidate
+            # Look for rectangular contours with reasonable size
             tooltip_roi = None
-            max_area = 0
+            max_score = 0
             
             for contour in contours:
                 area = cv2.contourArea(contour)
-                if area > 500:  # Minimum size to be considered
+                if area > 1000:  # Minimum size to be considered
                     x, y, w, h = cv2.boundingRect(contour)
-                    # Check aspect ratio - tooltips are wider than tall
-                    if w > h and w > 100 and h > 20:
-                        if area > max_area:
-                            max_area = area
-                            tooltip_roi = (x, y, w, h)
+                    
+                    # Check if it's a reasonable tooltip shape
+                    # Tooltips are wider than tall, not too narrow
+                    aspect_ratio = w / h if h > 0 else 0
+                    if 1.5 < aspect_ratio < 10 and w > 80 and h > 15:
+                        # Check if the region has dark background (tooltip characteristic)
+                        roi_check = gray[y:y+h, x:x+w]
+                        mean_brightness = np.mean(roi_check)
+                        
+                        # Dark background (tooltip) should have low mean brightness
+                        if mean_brightness < 100:
+                            # Score based on size and darkness
+                            score = area * (100 - mean_brightness)
+                            if score > max_score:
+                                max_score = score
+                                # Add small padding inside the border
+                                padding = 3
+                                tooltip_roi = (
+                                    max(0, x + padding),
+                                    max(0, y + padding),
+                                    max(1, w - 2*padding),
+                                    max(1, h - 2*padding)
+                                )
             
             # If we found a tooltip box, extract that region
             if tooltip_roi:
