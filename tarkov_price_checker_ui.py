@@ -21,6 +21,7 @@ import numpy as np
 from pynput import mouse
 import pickle
 from packaging import version
+from difflib import SequenceMatcher
 try:
     from pystray import Icon, Menu, MenuItem
     from PIL import Image as PILImage
@@ -78,8 +79,13 @@ class TarkovPriceCheckerUI:
         self.ocr_cache = {}
         self.cache_duration = timedelta(minutes=30)  # Cache for 30 minutes
         
+        # Cache for all items (for fuzzy matching)
+        self.all_items_cache = None
+        self.all_items_timestamp = None
+        
         # Settings
         self.settings_file = os.path.join(user_temp, "WabbajackTarkov", "settings.pkl")
+        self.items_cache_file = os.path.join(user_temp, "WabbajackTarkov", "items_cache.pkl")
         self.current_version = "1.3.0"
         self.settings = {
             'theme_color': '#00ff41',
@@ -163,6 +169,14 @@ class TarkovPriceCheckerUI:
             # Initialize EasyOCR (downloads models on first run)
             self.ocr_reader = easyocr.Reader(['en'], gpu=False)
             self.ocr_loading = False
+            
+            # Pre-fetch all items for fuzzy matching
+            try:
+                if hasattr(self, 'loading_label') and self.loading_window.winfo_exists():
+                    self.loading_label.config(text="Loading item database...")
+                self.load_or_fetch_all_items()
+            except Exception as e:
+                print(f"Warning: Could not pre-fetch items: {e}")
             
             # Close loading window
             if hasattr(self, 'loading_window') and self.loading_window.winfo_exists():
@@ -551,6 +565,65 @@ class TarkovPriceCheckerUI:
         # Run in a separate thread to avoid blocking
         threading.Thread(target=self.capture_and_search, daemon=True).start()
     
+    def detect_tooltip_bounds(self, screenshot, mouse_x, mouse_y):
+        """Detect the tooltip box boundaries automatically"""
+        try:
+            # Convert to grayscale
+            gray = cv2.cvtColor(screenshot, cv2.COLOR_BGR2GRAY)
+            
+            # Tarkov tooltips have dark background (around 20-40 brightness)
+            # with white border (around 200-255 brightness)
+            # Apply threshold to find dark regions
+            _, dark_mask = cv2.threshold(gray, 80, 255, cv2.THRESH_BINARY_INV)
+            
+            # Find contours of dark regions
+            contours, _ = cv2.findContours(dark_mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+            
+            if not contours:
+                return None
+            
+            # Calculate expected tooltip position relative to mouse in screenshot
+            # Mouse is at (mouse_x, mouse_y) in screen coords
+            # We took screenshot starting at mouse_x-200, mouse_y-200
+            mouse_in_screen_x = 200
+            mouse_in_screen_y = 200
+            
+            # Find the contour that:
+            # 1. Is reasonably large (tooltip is at least 150x30 pixels)
+            # 2. Is near where we expect the tooltip (slightly right and above cursor)
+            best_contour = None
+            best_score = float('inf')
+            
+            for contour in contours:
+                x, y, w, h = cv2.boundingRect(contour)
+                
+                # Tooltip size constraints
+                if w < 150 or h < 20:  # Too small
+                    continue
+                if w > 500 or h > 200:  # Too large
+                    continue
+                
+                # Expected position: slightly to the right and above cursor
+                # Adjusted to be more left: +10 to +50 pixels right, -80 to -40 pixels up
+                expected_x = mouse_in_screen_x + 30  # Shifted left from 60
+                expected_y = mouse_in_screen_y - 60  # Slightly adjusted
+                
+                # Calculate distance from expected position
+                center_x = x + w/2
+                center_y = y + h/2
+                distance = ((center_x - expected_x)**2 + (center_y - expected_y)**2)**0.5
+                
+                # Prefer tooltips closer to expected position
+                if distance < best_score:
+                    best_score = distance
+                    best_contour = (x, y, w, h)
+            
+            return best_contour
+            
+        except Exception as e:
+            self.log(f"⚠ Tooltip detection error: {e}", '#ff9800')
+            return None
+    
     def capture_and_search(self):
         """Capture screenshot and search for item"""
         try:
@@ -560,18 +633,43 @@ class TarkovPriceCheckerUI:
             # Get mouse position
             mouse_x, mouse_y = self.mouse_controller.position
             
-            # Take a small screenshot exactly where the tooltip appears
-            # Tarkov tooltips consistently appear to the right and slightly above the cursor
-            # Typical tooltip position: ~60-80px right, ~40-60px above cursor
-            # Typical tooltip size: ~150-250px wide, ~25-45px tall
-            capture_x = mouse_x + 55
-            capture_y = mouse_y - 50
-            capture_width = 260
-            capture_height = 50
+            # Take initial screenshot with generous margin to find tooltip
+            # This captures a larger area to ensure we get the entire tooltip
+            search_x = mouse_x - 200
+            search_y = mouse_y - 200
+            search_width = 600
+            search_height = 400
             
-            region = (capture_x, capture_y, capture_width, capture_height)
-            filepath = self.take_screenshot(region=region, filename="tooltip_capture.png")
-            self.log(f"✓ Screenshot saved: {filepath}", '#00ff00')
+            region = (search_x, search_y, search_width, search_height)
+            temp_filepath = self.take_screenshot(region=region, filename="tooltip_search.png")
+            
+            # Load the screenshot for processing
+            search_img = cv2.imread(temp_filepath)
+            
+            # Detect tooltip boundaries
+            tooltip_bounds = self.detect_tooltip_bounds(search_img, mouse_x, mouse_y)
+            
+            if tooltip_bounds:
+                # Extract just the tooltip region
+                x, y, w, h = tooltip_bounds
+                tooltip_img = search_img[y:y+h, x:x+w]
+                
+                # Save the extracted tooltip
+                filepath = os.path.join(self.screenshots_dir, "tooltip_capture.png")
+                cv2.imwrite(filepath, tooltip_img)
+                
+                self.log(f"✓ Detected tooltip: {w}x{h}px at position ({x},{y})", '#00ff00')
+            else:
+                # Fallback: use fixed position if detection fails
+                self.log("⚠ Auto-detection failed, using fixed position", '#ff9800')
+                capture_x = mouse_x + 20  # Shifted more left
+                capture_y = mouse_y - 60  # Adjusted up slightly
+                capture_width = 300  # Slightly wider
+                capture_height = 50  # Slightly taller
+                
+                region = (capture_x, capture_y, capture_width, capture_height)
+                filepath = self.take_screenshot(region=region, filename="tooltip_capture.png")
+                self.log(f"✓ Screenshot saved: {filepath}", '#00ff00')
             
             # Use OCR to detect item name (always enabled)
             self.log("🔍 Detecting item name from screenshot...", '#ffff00')
@@ -771,12 +869,136 @@ class TarkovPriceCheckerUI:
         self.log(f"🔍 Manual search for: {item_name}", '#00bfff')
         self.search_item(item_name)
     
+    def load_or_fetch_all_items(self):
+        """Load items from disk cache or fetch from API if version changed"""
+        try:
+            # Try to load from disk cache
+            if os.path.exists(self.items_cache_file):
+                try:
+                    with open(self.items_cache_file, 'rb') as f:
+                        cache_data = pickle.load(f)
+                        
+                    # Check if cache version matches current app version
+                    if cache_data.get('version') == self.current_version:
+                        self.all_items_cache = cache_data.get('items', [])
+                        if self.all_items_cache:
+                            self.log(f">>> Loaded {len(self.all_items_cache)} items from cache", '#00ff41')
+                            return self.all_items_cache
+                    else:
+                        self.log(f">>> Cache version mismatch, fetching fresh data...", '#ffff00')
+                except Exception as e:
+                    self.log(f">>> Could not load cache: {e}", '#ff9800')
+            
+            # Fetch from API
+            self.log(">>> Fetching all items from API...", '#ffff00')
+            
+            # Determine game mode for API query
+            game_mode = 'regular' if self.game_mode == 'PVP' else 'pve'
+            
+            # GraphQL query to fetch all items (just names)
+            query = """
+            query AllItems($gameMode: GameMode) {
+              items(gameMode: $gameMode) {
+                name
+                shortName
+              }
+            }
+            """
+            
+            variables = {"gameMode": game_mode}
+            payload = {"query": query, "variables": variables}
+            
+            response = requests.post(self.base_url, headers=self.headers, json=payload, timeout=15)
+            response.raise_for_status()
+            
+            data = response.json()
+            
+            if data and 'data' in data and data['data']['items']:
+                items = data['data']['items']
+                # Store both full names and short names
+                all_names = set()
+                for item in items:
+                    if item.get('name'):
+                        all_names.add(item['name'])
+                    if item.get('shortName'):
+                        all_names.add(item['shortName'])
+                
+                self.all_items_cache = list(all_names)
+                
+                # Save to disk with version
+                try:
+                    os.makedirs(os.path.dirname(self.items_cache_file), exist_ok=True)
+                    cache_data = {
+                        'version': self.current_version,
+                        'items': self.all_items_cache
+                    }
+                    with open(self.items_cache_file, 'wb') as f:
+                        pickle.dump(cache_data, f)
+                    self.log(f">>> Cached {len(self.all_items_cache)} items to disk", '#00ff41')
+                except Exception as e:
+                    self.log(f">>> Could not save cache: {e}", '#ff9800')
+                
+                return self.all_items_cache
+            
+            return []
+            
+        except Exception as e:
+            self.log(f">>> WARNING: Could not fetch all items - {e}", '#ff9800')
+            return self.all_items_cache if self.all_items_cache else []
+    
+    def find_best_match(self, search_name, threshold=0.6):
+        """Find the best matching item name using fuzzy matching"""
+        # Use cached items (already loaded on startup)
+        all_items = self.all_items_cache if self.all_items_cache else []
+        
+        if not all_items:
+            return search_name  # Return original if can't fetch items
+        
+        # Calculate similarity scores
+        best_match = None
+        best_score = 0
+        
+        search_lower = search_name.lower().strip()
+        
+        for item_name in all_items:
+            item_lower = item_name.lower()
+            
+            # Exact match
+            if search_lower == item_lower:
+                return item_name
+            
+            # Check if search is contained in item name
+            if search_lower in item_lower:
+                score = len(search_lower) / len(item_lower)
+                if score > best_score:
+                    best_score = score
+                    best_match = item_name
+                continue
+            
+            # Fuzzy matching using SequenceMatcher
+            similarity = SequenceMatcher(None, search_lower, item_lower).ratio()
+            
+            if similarity > best_score:
+                best_score = similarity
+                best_match = item_name
+        
+        # Only return match if similarity is above threshold
+        if best_score >= threshold:
+            if best_match.lower() != search_lower:
+                self.log(f">>> Fuzzy match: '{search_name}' → '{best_match}' (score: {best_score:.2f})", '#00ffff')
+            return best_match
+        
+        return search_name  # Return original if no good match
+    
     def search_item(self, item_name):
         """Search for an item and display results using GraphQL"""
-        self.update_status(f"Searching for {item_name}...", '#ffff00')
+        # Try fuzzy matching to find correct item name
+        corrected_name = self.find_best_match(item_name)
+        
+        self.update_status(f"Searching for {corrected_name}...", '#ffff00')
         
         # Check cache first
-        cache_key = f"{item_name}_{self.game_mode}"
+        cache_key = f"{corrected_name}_{self.game_mode}"
         cached_data = self.get_cached_item(cache_key)
         if cached_data:
             self.log(">>> Using cached data", '#00ffff')
@@ -819,7 +1041,7 @@ class TarkovPriceCheckerUI:
             """
             
             variables = {
-                "name": item_name,
+                "name": corrected_name,
                 "gameMode": game_mode
             }
             payload = {"query": query, "variables": variables}
