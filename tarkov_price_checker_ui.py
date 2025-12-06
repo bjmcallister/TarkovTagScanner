@@ -557,18 +557,18 @@ class TarkovPriceCheckerUI:
             # Small delay to let keys be released
             time.sleep(0.3)
             
-            # Get mouse position for ROI calculation
+            # Get mouse position
             mouse_x, mouse_y = self.mouse_controller.position
             
-            # Calculate ROI region (same as in extract_item_name_from_image)
-            roi_x = max(0, mouse_x + 40)
-            roi_y = max(0, mouse_y - 80)
-            roi_width = 900
-            roi_height = 150
+            # Take a larger area screenshot around the mouse to capture the tooltip
+            # Tooltip appears to the right and slightly above cursor
+            capture_x = max(0, mouse_x - 100)
+            capture_y = max(0, mouse_y - 150)
+            capture_width = 800
+            capture_height = 300
             
-            # Take screenshot of only the ROI region
-            region = (roi_x, roi_y, roi_width, roi_height)
-            filepath = self.take_screenshot(region=region, filename="last_ocr_region.png")
+            region = (capture_x, capture_y, capture_width, capture_height)
+            filepath = self.take_screenshot(region=region, filename="full_capture.png")
             self.log(f"✓ Screenshot saved: {filepath}", '#00ff00')
             
             # Use OCR to detect item name (always enabled)
@@ -663,28 +663,64 @@ class TarkovPriceCheckerUI:
     def extract_item_name_from_image(self, image_path):
         """
         Extract item name from screenshot using OCR
-        Focuses on the top-center area where Tarkov displays item names
+        Detects the black tooltip box with white border and extracts text from it
         """
         try:
             # Initialize OCR if needed
             if not self.initialize_ocr():
                 return None
             
-            # Load the ROI screenshot directly
-            roi = cv2.imread(image_path)
-            if roi is None:
+            # Load the screenshot
+            img = cv2.imread(image_path)
+            if img is None:
                 self.log("✗ Could not load screenshot", '#ff0000')
                 return None
             
             # Convert to grayscale
+            gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
+            
+            # Detect the black tooltip box with white border
+            # Tarkov tooltips are dark (near black) with white/light borders
+            # First, find dark regions
+            _, dark_mask = cv2.threshold(gray, 50, 255, cv2.THRESH_BINARY_INV)
+            
+            # Find contours (boxes)
+            contours, _ = cv2.findContours(dark_mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+            
+            # Find the largest dark rectangular region (likely the tooltip)
+            tooltip_roi = None
+            max_area = 0
+            
+            for contour in contours:
+                area = cv2.contourArea(contour)
+                if area > 500:  # Minimum size to be considered
+                    x, y, w, h = cv2.boundingRect(contour)
+                    # Check aspect ratio - tooltips are wider than tall
+                    if w > h and w > 100 and h > 20:
+                        if area > max_area:
+                            max_area = area
+                            tooltip_roi = (x, y, w, h)
+            
+            # If we found a tooltip box, extract that region
+            if tooltip_roi:
+                x, y, w, h = tooltip_roi
+                roi = img[y:y+h, x:x+w]
+                
+                # Save for debugging
+                debug_path = os.path.join(self.screenshots_dir, "last_ocr_region.png")
+                cv2.imwrite(debug_path, roi)
+                self.log(f"✓ Detected tooltip box at ({x}, {y}) size {w}x{h}", '#00ffff')
+            else:
+                # Fallback: use the full image
+                self.log("⚠ No tooltip box detected, using full image", '#ff9800')
+                roi = img
+            
+            # Convert ROI to grayscale
             gray = cv2.cvtColor(roi, cv2.COLOR_BGR2GRAY)
             
             # Apply thresholding to make text more readable
             # Tarkov uses light text on dark background
             _, thresh = cv2.threshold(gray, 0, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU)
-            
-            # Also try inverted threshold
-            _, thresh_inv = cv2.threshold(gray, 0, 255, cv2.THRESH_BINARY_INV + cv2.THRESH_OTSU)
             
             # Perform OCR on the threshold version (best for Tarkov's light text on dark background)
             results = self.ocr_reader.readtext(thresh, detail=0)
