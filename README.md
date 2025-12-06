@@ -1,4 +1,4 @@
-# ⚡ WABBAJACK TARKOV PRICE CHECKER ⚡
+# WABBAJACK TARKOV PRICE CHECKER
 
 <div align="center">
 
@@ -16,80 +16,63 @@
 
 ---
 
-## 📋 Features
+## Features
 
-- 🎯 **OCR Item Detection** - Automatically detects item names from your screen
-- ⚡ **Instant Price Lookup** - Real-time prices from Tarkov Market API
-- 🖱️ **Multiple Trigger Options** - Keyboard hotkey (8) or mouse side button
-- 📊 **Price Per Slot** - Calculate efficiency for inventory management
-- 🎨 **Matrix-Themed UI** - Sleek dark green/black interface
-- 🔒 **No Admin Required** - Works without administrator privileges
-- 💾 **Lightweight** - Minimal resource usage
-- 🆓 **No API Key** - Uses free tarkov.dev GraphQL API
-- 🌐 **Real-time Data** - Community-driven, constantly updated
+- **OCR Item Detection** - Automatically detects item names from your screen
+- **Instant Price Lookup** - Real-time prices from Tarkov Market API
+- **Multiple Trigger Options** - Keyboard hotkey or mouse side button
+- **Custom Hotkeys** - Configure your own hotkey preferences
+- **Price Per Slot** - Calculate efficiency for inventory management
+- **Matrix-Themed UI** - Sleek dark green/black interface
+- **No Admin Required** - Works without administrator privileges
+- **Lightweight** - Minimal resource usage
+- **No API Key** - Uses free tarkov.dev GraphQL API
+- **Real-time Data** - Community-driven, constantly updated
 
 ---
 
-## 🚀 Quick Start
+## Quick Start
 
-### Option 1: Download Executable (Recommended)
+### Download Release Build
 
 1. Download `WabbajackTarkovPriceChecker.exe` from [Releases](../../releases)
 2. Run the executable
-3. Click **[ACTIVATE]** or press **Shift+K**
-4. Hover over items in Tarkov and press **8** or your mouse side button
+3. Click **[ACTIVATE]** or configure your hotkey
+4. Hover over items in Tarkov and trigger your hotkey
 
-### Option 2: Run from Source
-
-#### Prerequisites
-- Python 3.8 or higher
-- Windows OS
-
-#### Installation
-
-1. **Clone the repository**
-```bash
-git clone https://github.com/YOUR_USERNAME/Tarkov_project.git
-cd Tarkov_project
-```
-
-2. **Install dependencies**
-```bash
-pip install -r requirements.txt
-```
-
-3. **Run the application**
-```bash
-python tarkov_price_checker_ui.py
-```
+**Note:** Releases are automatically built via GitHub Actions. No need to build locally!
 
 ---
 
-## 🎮 Usage
+## Usage
 
 ### Initial Setup
 
 1. **Launch the application**
-   - Double-click `WabbajackTarkovPriceChecker.exe` or run `python tarkov_price_checker_ui.py`
+   - Double-click `WabbajackTarkovPriceChecker.exe`
 
 2. **First Run**
    - OCR models will download automatically (~100MB)
    - This only happens once
 
-3. **Activate System**
-   - Click **[ACTIVATE]** button or press **Shift+K**
+3. **Configure Hotkey (Optional)**
+   - Click **[CONFIGURE HOTKEY]** to set your preferred hotkey
+   - Default: Shift+K to activate, 8 to capture
+
+4. **Activate System**
+   - Click **[ACTIVATE]** button or press your toggle hotkey
    - Status will change to ">>> SYSTEM ACTIVE"
 
 ### Scanning Items
 
 1. **In Tarkov**, hover your mouse cursor over any item
-2. Press **8** key or your **mouse side button**
+2. Press your configured capture hotkey (default: **8**)
 3. A green overlay will appear with:
    - Item name
-   - Current flea market price
-   - 24-hour price change
-   - Price per inventory slot
-   - Trader sell price
+   - **Flea market price** (most prominent)
+   - **Price per slot** (most prominent)
+   - 48-hour price change
+   - Best trader sell price
 
 ### Manual Search
 
@@ -100,7 +83,9 @@ You can also search items manually:
 
 ---
 
-## ⌨️ Hotkeys
+## Hotkeys
+
+**Default Hotkeys:**
 
 | Hotkey | Function |
 |--------|----------|
@@ -108,9 +93,14 @@ You can also search items manually:
 | `8` | Capture item at cursor (requires system active) |
 | `Mouse Side Button` | Capture item at cursor (requires system active) |
 
+**Custom Hotkeys:**
+- Click **[CONFIGURE HOTKEY]** in the application to set your own preferences
+- Supports most keyboard keys and combinations
+- Mouse buttons also supported
+
 ---
 
-## 🔧 Configuration
+## Configuration
 
 ### API Source
 
@@ -130,7 +120,7 @@ The OCR capture region is optimized for Tarkov's default UI. If items aren't det
 
 ---
 
-## ❓ FAQ
+## FAQ
 
 ### Is this detectable by BattleEye?
 
@@ -170,23 +160,7 @@ This uses the free **tarkov.dev GraphQL API** maintained by The Hideout communit
 
 ---
 
-## 🛠️ Building from Source
-
-To create your own executable:
-
-```bash
-# Install PyInstaller
-pip install pyinstaller
-
-# Build executable
-python build_exe.py
-```
-
-The executable will be in the `dist/` folder.
-
----
-
-## 📦 Dependencies
+## Dependencies
 
 - `tkinter` - GUI framework
 - `pyautogui` - Screenshot capture
@@ -200,7 +174,7 @@ The executable will be in the `dist/` folder.
 
 ---
 
-## 🐛 Troubleshooting
+## Troubleshooting
 
 ### Application won't start
 - Ensure Python 3.8+ is installed
@@ -219,7 +193,7 @@ The executable will be in the `dist/` folder.
 
 ---
 
-## 🤝 Contributing
+## Contributing
 
 Contributions welcome! Please:
 1. Fork the repository
@@ -229,13 +203,13 @@ Contributions welcome! Please:
 
 ---
 
-## 📄 License
+## License
 
 This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
 
 ---
 
-## ⚠️ Disclaimer
+## Disclaimer
 
 This tool is for educational and personal use only. 
 
@@ -245,9 +219,9 @@ This tool is for educational and personal use only.
 
 ---
 
-## ☕ Support the Project
+## Support the Project
 
-If you find this tool useful, consider buying me a coffee! ☕
+If you find this tool useful, consider buying me a coffee!
 
 [![Buy Me A Coffee](https://cdn.buymeacoffee.com/buttons/v2/default-green.png)](https://www.buymeacoffee.com/allisteras)
 
@@ -255,18 +229,18 @@ Your support helps keep the project maintained and updated!
 
 ---
 
-## 🙏 Credits
+## Credits
 
 - **Tarkov.dev API** - Free GraphQL API by The Hideout: https://tarkov.dev
 - **The Hideout** - Community API: https://github.com/the-hideout/tarkov-api
 - **EasyOCR** - Text recognition: https://github.com/JaidedAI/EasyOCR
-- Built with ❤️ by the Tarkov community
+- Built by the Tarkov community
 
 ---
 
 <div align="center">
 
-**⚡ WABBAJACK - Making Tarkov Trading Easier ⚡**
+**WABBAJACK - Making Tarkov Trading Easier**
 
 [Report Bug](../../issues) • [Request Feature](../../issues) • [Buy Me a Coffee](https://www.buymeacoffee.com/allisteras)
 

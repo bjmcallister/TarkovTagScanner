@@ -54,9 +54,17 @@ class TarkovPriceCheckerUI:
         self.mouse_controller = mouse.Controller()
         self.auto_capture_timer = None
         
+        # Configurable hotkeys
+        self.toggle_hotkey = 'shift+k'
+        self.capture_hotkey = '8'
+        
+        # Game mode (PVP/PVE)
+        self.game_mode = 'PVP'  # Default to PVP
+        
         # OCR configuration
         self.ocr_reader = None
         self.ocr_enabled = True
+        self.ocr_loading = False
         
         # Overlay window for price display
         self.overlay_window = None
@@ -67,9 +75,78 @@ class TarkovPriceCheckerUI:
         self.root.geometry("900x800")
         self.root.configure(bg='#000000')
         
+        # Show loading screen and initialize OCR in background
+        self.show_loading_screen()
+        
         self.create_ui()
         self.register_toggle_hotkey()
         
+    def show_loading_screen(self):
+        """Display loading screen while OCR models initialize"""
+        # Create loading window
+        self.loading_window = tk.Toplevel(self.root)
+        self.loading_window.title("Loading")
+        self.loading_window.geometry("400x200")
+        self.loading_window.configure(bg='#000000')
+        self.loading_window.transient(self.root)
+        
+        # Center the loading window
+        self.loading_window.update_idletasks()
+        x = (self.loading_window.winfo_screenwidth() // 2) - (400 // 2)
+        y = (self.loading_window.winfo_screenheight() // 2) - (200 // 2)
+        self.loading_window.geometry(f"400x200+{x}+{y}")
+        
+        # Loading content
+        tk.Label(
+            self.loading_window,
+            text="WABBAJACK INITIALIZING...",
+            font=("Courier New", 14, "bold"),
+            bg='#000000',
+            fg='#00ff41'
+        ).pack(pady=20)
+        
+        self.loading_label = tk.Label(
+            self.loading_window,
+            text="Loading OCR models...\nThis may take up to 60 seconds on first run",
+            font=("Courier New", 10),
+            bg='#000000',
+            fg='#00ffff',
+            justify='center'
+        )
+        self.loading_label.pack(pady=20)
+        
+        # Progress animation
+        self.loading_dots = 0
+        self.animate_loading()
+        
+        # Start OCR initialization in background thread
+        threading.Thread(target=self.initialize_ocr_background, daemon=True).start()
+    
+    def animate_loading(self):
+        """Animate loading dots"""
+        if hasattr(self, 'loading_window') and self.loading_window.winfo_exists():
+            dots = '.' * (self.loading_dots % 4)
+            self.loading_label.config(text=f"Loading OCR models{dots}\nThis may take up to 60 seconds on first run")
+            self.loading_dots += 1
+            self.root.after(500, self.animate_loading)
+    
+    def initialize_ocr_background(self):
+        """Initialize OCR in background thread"""
+        try:
+            self.ocr_loading = True
+            # Initialize EasyOCR (downloads models on first run)
+            self.ocr_reader = easyocr.Reader(['en'], gpu=False)
+            self.ocr_loading = False
+            
+            # Close loading window
+            if hasattr(self, 'loading_window') and self.loading_window.winfo_exists():
+                self.loading_window.destroy()
+        except Exception as e:
+            self.ocr_loading = False
+            if hasattr(self, 'loading_window') and self.loading_window.winfo_exists():
+                self.loading_window.destroy()
+            messagebox.showerror("OCR Error", f"Failed to initialize OCR: {e}")
+    
     def create_ui(self):
         """Create the user interface"""
         # Title
@@ -129,7 +206,7 @@ class TarkovPriceCheckerUI:
         self.hotkey_button = tk.Button(
             button_frame,
             text="[ ACTIVATE ]",
-            command=self.toggle_hotkey,
+            command=self.toggle_hotkey_method,
             font=("Courier New", 12, "bold"),
             bg='#003300',
             fg='#00ff41',
@@ -142,6 +219,24 @@ class TarkovPriceCheckerUI:
             cursor='hand2'
         )
         self.hotkey_button.pack(side='left', padx=5)
+        
+        # Configure hotkey button
+        self.configure_button = tk.Button(
+            button_frame,
+            text="[ CONFIGURE HOTKEY ]",
+            command=self.configure_hotkeys,
+            font=("Courier New", 10, "bold"),
+            bg='#003300',
+            fg='#00ff41',
+            activebackground='#00ff41',
+            activeforeground='#000000',
+            padx=15,
+            pady=10,
+            bd=3,
+            relief='raised',
+            cursor='hand2'
+        )
+        self.configure_button.pack(side='left', padx=5)
         
         # OCR toggle
         self.ocr_var = tk.BooleanVar(value=True)
@@ -157,6 +252,47 @@ class TarkovPriceCheckerUI:
             activeforeground='#00ff41'
         )
         self.ocr_checkbox.pack(side='left', padx=15)
+        
+        # PVP/PVE mode toggle
+        self.mode_var = tk.StringVar(value='PVP')
+        mode_label = tk.Label(
+            button_frame,
+            text="MODE:",
+            font=("Courier New", 10, "bold"),
+            bg='#001100',
+            fg='#00ff41'
+        )
+        mode_label.pack(side='left', padx=(15, 5))
+        
+        pvp_radio = tk.Radiobutton(
+            button_frame,
+            text="PVP",
+            variable=self.mode_var,
+            value='PVP',
+            font=("Courier New", 10, "bold"),
+            bg='#001100',
+            fg='#00ff41',
+            selectcolor='#000000',
+            activebackground='#001100',
+            activeforeground='#00ff41',
+            command=self.update_game_mode
+        )
+        pvp_radio.pack(side='left')
+        
+        pve_radio = tk.Radiobutton(
+            button_frame,
+            text="PVE",
+            variable=self.mode_var,
+            value='PVE',
+            font=("Courier New", 10, "bold"),
+            bg='#001100',
+            fg='#00ff41',
+            selectcolor='#000000',
+            activebackground='#001100',
+            activeforeground='#00ff41',
+            command=self.update_game_mode
+        )
+        pve_radio.pack(side='left', padx=(0, 15))
         
         # Manual search frame
         search_frame = tk.LabelFrame(
@@ -282,7 +418,7 @@ class TarkovPriceCheckerUI:
         self.status_label.config(text=f">>> {status.upper()}", fg=color)
         self.root.update()
         
-    def toggle_hotkey(self):
+    def toggle_hotkey_method(self):
         """Toggle the hotkey listener on/off"""
         if not self.hotkey_enabled:
             self.start_hotkey_listener()
@@ -301,12 +437,12 @@ class TarkovPriceCheckerUI:
             self.update_status("System Active", '#00ff41')
             self.log(">>> SYSTEM ACTIVATED", '#00ff41')
             self.log(">>> Hover cursor over target items", '#00ffff')
-            self.log(">>> Press [8] or [Mouse Side Button] to scan", '#00ffff')
-            self.log(">>> Press [Shift+K] to deactivate", '#ffff00')
+            self.log(f">>> Press [{self.capture_hotkey.upper()}] or [Mouse Side Button] to scan", '#00ffff')
+            self.log(f">>> Press [{self.toggle_hotkey.upper()}] to deactivate", '#ffff00')
             
             # Register keyboard hotkeys
             try:
-                keyboard.add_hotkey('8', self.on_hotkey_triggered, suppress=False)
+                keyboard.add_hotkey(self.capture_hotkey, self.on_hotkey_triggered, suppress=False)
                 self.hotkey_registered = True
                 self.log(">>> Keyboard interface: [ONLINE]", '#00ff41')
             except:
@@ -343,7 +479,7 @@ class TarkovPriceCheckerUI:
         try:
             if self.hotkey_registered:
                 try:
-                    keyboard.remove_hotkey('8')
+                    keyboard.remove_hotkey(self.capture_hotkey)
                 except:
                     pass
                 self.hotkey_registered = False
@@ -405,18 +541,17 @@ class TarkovPriceCheckerUI:
             self.update_status("Error occurred", '#ff0000')
     
     def initialize_ocr(self):
-        """Initialize the OCR reader (lazy loading)"""
+        """Check if OCR is ready (already initialized in background)"""
+        if self.ocr_loading:
+            self.log(">>> Waiting for OCR initialization...", '#ffff00')
+            self.update_status("Waiting for OCR...", '#ffff00')
+            while self.ocr_loading:
+                time.sleep(0.1)
+                self.root.update()
+        
         if self.ocr_reader is None:
-            try:
-                self.log("⏳ Initializing OCR engine (first time only, downloading models ~100MB)...", '#ffff00')
-                self.update_status("Downloading OCR models...", '#ffff00')
-                self.ocr_reader = easyocr.Reader(['en'], gpu=False)
-                self.log("✓ OCR engine ready!", '#00ff00')
-                self.update_status("OCR ready", '#00ff00')
-                return True
-            except Exception as e:
-                self.log(f"✗ OCR initialization failed: {e}", '#ff0000')
-                return False
+            self.log(">>> ERROR: OCR not initialized", '#ff0000')
+            return False
         return True
     
     def fix_ocr_errors(self, text):
@@ -611,10 +746,13 @@ class TarkovPriceCheckerUI:
         self.update_status(f"Searching for {item_name}...", '#ffff00')
         
         try:
+            # Determine game mode for API query
+            game_mode = 'regular' if self.game_mode == 'PVP' else 'pve'
+            
             # GraphQL query for Tarkov.dev API
             query = """
-            query ItemsByName($name: String!) {
-              itemsByName(name: $name) {
+            query ItemsByName($name: String!, $gameMode: GameMode) {
+              itemsByName(name: $name, gameMode: $gameMode) {
                 name
                 shortName
                 width
@@ -640,7 +778,10 @@ class TarkovPriceCheckerUI:
             }
             """
             
-            variables = {"name": item_name}
+            variables = {
+                "name": item_name,
+                "gameMode": game_mode
+            }
             payload = {"query": query, "variables": variables}
             
             response = requests.post(self.base_url, headers=self.headers, json=payload, timeout=10)
@@ -805,25 +946,52 @@ class TarkovPriceCheckerUI:
         name_label = tk.Label(
             inner_frame,
             text=f">>> {item_data.get('name', 'Unknown').upper()}",
-            font=("Courier New", 11, "bold"),
+            font=("Courier New", 10, "bold"),
             bg='#000000',
             fg='#00ff41',
             justify='left'
         )
         name_label.pack(anchor='w')
         
-        # Price (use avg24hPrice from GraphQL)
+        # Price (use avg24hPrice from GraphQL) - MOST PROMINENT
         price = item_data.get('avg24hPrice') or item_data.get('lastLowPrice') or item_data.get('basePrice', 'N/A')
         price_text = f"{price:,} ₽" if isinstance(price, (int, float)) and price > 0 else "N/A"
         price_label = tk.Label(
             inner_frame,
-            text=f"PRICE: {price_text}",
-            font=("Courier New", 13, "bold"),
+            text=price_text,
+            font=("Courier New", 18, "bold"),
             bg='#000000',
             fg='#00ff41',
             justify='left'
         )
-        price_label.pack(anchor='w', pady=(5, 0))
+        price_label.pack(anchor='w', pady=(3, 0))
+        
+        # Price per slot (calculate from width x height) - SECOND MOST PROMINENT
+        width = item_data.get('width', None)
+        height = item_data.get('height', None)
+        if width and height and isinstance(price, (int, float)) and price > 0:
+            slots = width * height
+            price_per_slot = price / slots
+            slot_label = tk.Label(
+                inner_frame,
+                text=f"{price_per_slot:,.0f} ₽/slot",
+                font=("Courier New", 15, "bold"),
+                bg='#000000',
+                fg='#00ffff',
+                justify='left'
+            )
+            slot_label.pack(anchor='w', pady=(2, 0))
+            
+            # Small dimension info
+            size_label = tk.Label(
+                inner_frame,
+                text=f"({width}x{height} = {slots} slots)",
+                font=("Courier New", 8),
+                bg='#000000',
+                fg='#00aaaa',
+                justify='left'
+            )
+            size_label.pack(anchor='w')
         
         # 48h change (GraphQL provides changeLast48hPercent)
         diff48h = item_data.get('changeLast48hPercent', 0)
@@ -833,28 +1001,12 @@ class TarkovPriceCheckerUI:
             change_label = tk.Label(
                 inner_frame,
                 text=f"{change_symbol} 48H: {diff48h:.2f}%",
-                font=("Courier New", 10),
+                font=("Courier New", 9),
                 bg='#000000',
                 fg=change_color,
                 justify='left'
             )
-            change_label.pack(anchor='w')
-        
-        # Price per slot (calculate from width x height)
-        width = item_data.get('width', None)
-        height = item_data.get('height', None)
-        if width and height and isinstance(price, (int, float)) and price > 0:
-            slots = width * height
-            price_per_slot = price / slots
-            slot_label = tk.Label(
-                inner_frame,
-                text=f"EFFICIENCY: {price_per_slot:,.0f} ₽/slot ({width}x{height}={slots})",
-                font=("Courier New", 9),
-                bg='#000000',
-                fg='#00ffff',
-                justify='left'
-            )
-            slot_label.pack(anchor='w')
+            change_label.pack(anchor='w', pady=(3, 0))
         
         # Trader price (get best from sellFor array)
         sell_for = item_data.get('sellFor', [])
@@ -866,7 +1018,7 @@ class TarkovPriceCheckerUI:
                 trader_label = tk.Label(
                     inner_frame,
                     text=f"TRADER: {trader} - {trader_price:,} ₽",
-                    font=("Courier New", 9),
+                    font=("Courier New", 8),
                     bg='#000000',
                     fg='#ffff00',
                     justify='left'
@@ -897,15 +1049,167 @@ class TarkovPriceCheckerUI:
         # Auto-close after 5 seconds
         self.overlay_window.after(5000, close_overlay)
     
+    def update_game_mode(self):
+        """Update the game mode for API queries"""
+        self.game_mode = self.mode_var.get()
+        self.log(f">>> Game mode set to: {self.game_mode}", '#00ff41')
+    
+    def configure_hotkeys(self):
+        """Open dialog to configure custom hotkeys"""
+        config_window = tk.Toplevel(self.root)
+        config_window.title("Configure Hotkeys")
+        config_window.geometry("500x300")
+        config_window.configure(bg='#000000')
+        config_window.transient(self.root)
+        config_window.grab_set()
+        
+        # Title
+        title_label = tk.Label(
+            config_window,
+            text="HOTKEY CONFIGURATION",
+            font=("Courier New", 14, "bold"),
+            bg='#000000',
+            fg='#00ff41'
+        )
+        title_label.pack(pady=15)
+        
+        # Toggle hotkey
+        toggle_frame = tk.Frame(config_window, bg='#001100', padx=15, pady=10)
+        toggle_frame.pack(pady=5, padx=20, fill='x')
+        
+        tk.Label(
+            toggle_frame,
+            text="Toggle System (Activate/Deactivate):",
+            font=("Courier New", 10, "bold"),
+            bg='#001100',
+            fg='#00ff41'
+        ).pack(anchor='w')
+        
+        toggle_entry = tk.Entry(
+            toggle_frame,
+            font=("Courier New", 11),
+            bg='#000000',
+            fg='#00ff41',
+            insertbackground='#00ff41',
+            width=30
+        )
+        toggle_entry.insert(0, self.toggle_hotkey)
+        toggle_entry.pack(pady=5)
+        
+        # Capture hotkey
+        capture_frame = tk.Frame(config_window, bg='#001100', padx=15, pady=10)
+        capture_frame.pack(pady=5, padx=20, fill='x')
+        
+        tk.Label(
+            capture_frame,
+            text="Capture Item:",
+            font=("Courier New", 10, "bold"),
+            bg='#001100',
+            fg='#00ff41'
+        ).pack(anchor='w')
+        
+        capture_entry = tk.Entry(
+            capture_frame,
+            font=("Courier New", 11),
+            bg='#000000',
+            fg='#00ff41',
+            insertbackground='#00ff41',
+            width=30
+        )
+        capture_entry.insert(0, self.capture_hotkey)
+        capture_entry.pack(pady=5)
+        
+        # Help text
+        help_label = tk.Label(
+            config_window,
+            text="Examples: 'shift+k', 'ctrl+p', 'f1', '8'\nSeparate keys with '+' for combinations",
+            font=("Courier New", 8),
+            bg='#000000',
+            fg='#00aaaa'
+        )
+        help_label.pack(pady=10)
+        
+        # Buttons
+        button_frame = tk.Frame(config_window, bg='#000000')
+        button_frame.pack(pady=15)
+        
+        def save_hotkeys():
+            new_toggle = toggle_entry.get().strip().lower()
+            new_capture = capture_entry.get().strip().lower()
+            
+            if new_toggle and new_capture:
+                # Unregister old hotkeys
+                if self.hotkey_registered:
+                    try:
+                        keyboard.remove_hotkey(self.capture_hotkey)
+                    except:
+                        pass
+                if self.toggle_hotkey_registered:
+                    try:
+                        keyboard.remove_hotkey(self.toggle_hotkey)
+                    except:
+                        pass
+                
+                # Update hotkeys
+                self.toggle_hotkey = new_toggle
+                self.capture_hotkey = new_capture
+                
+                # Re-register if active
+                if self.hotkey_enabled:
+                    try:
+                        keyboard.add_hotkey(self.capture_hotkey, self.on_hotkey_triggered)
+                        self.hotkey_registered = True
+                    except:
+                        self.log(">>> ERROR: Failed to register capture hotkey", '#ff0000')
+                
+                try:
+                    keyboard.add_hotkey(self.toggle_hotkey, lambda: self.root.after(0, self.toggle_hotkey_handler))
+                    self.toggle_hotkey_registered = True
+                except:
+                    self.log(">>> ERROR: Failed to register toggle hotkey", '#ff0000')
+                
+                self.log(f">>> Hotkeys updated: Toggle={new_toggle}, Capture={new_capture}", '#00ff41')
+                config_window.destroy()
+            else:
+                messagebox.showerror("Error", "Both hotkeys must be specified")
+        
+        save_btn = tk.Button(
+            button_frame,
+            text="[ SAVE ]",
+            command=save_hotkeys,
+            font=("Courier New", 10, "bold"),
+            bg='#003300',
+            fg='#00ff41',
+            padx=20,
+            pady=8
+        )
+        save_btn.pack(side='left', padx=5)
+        
+        cancel_btn = tk.Button(
+            button_frame,
+            text="[ CANCEL ]",
+            command=config_window.destroy,
+            font=("Courier New", 10, "bold"),
+            bg='#330000',
+            fg='#ff4444',
+            padx=20,
+            pady=8
+        )
+        cancel_btn.pack(side='left', padx=5)
+    
     def register_toggle_hotkey(self):
-        """Register the Shift+K toggle hotkey on launch"""
+        """Register the toggle hotkey on launch"""
         try:
-            keyboard.add_hotkey('shift+k', self.toggle_hotkey, suppress=False)
+            keyboard.add_hotkey(self.toggle_hotkey, lambda: self.root.after(0, self.toggle_hotkey_handler), suppress=False)
             self.toggle_hotkey_registered = True
-            self.log("✓ Shift+K hotkey registered (press to start/stop)", '#00ff00')
+            self.log(f">>> Toggle hotkey registered: {self.toggle_hotkey.upper()}", '#00ff00')
         except Exception as e:
-            self.log(f"⚠ Could not register Shift+K hotkey: {e}", '#ff9800')
-            self.log("💡 You can still use the Start button", '#ffff00')
+            self.log(f">>> Could not register toggle hotkey: {e}", '#ff9800')
+            self.log(">>> You can still use the [ACTIVATE] button", '#ffff00')
+    
+    def toggle_hotkey_handler(self):
+        """Handle toggle hotkey press"""
+        self.toggle_hotkey_method()
     
     def on_closing(self):
         """Handle window closing"""
@@ -918,7 +1222,7 @@ class TarkovPriceCheckerUI:
             self.stop_hotkey_listener()
         if self.toggle_hotkey_registered:
             try:
-                keyboard.remove_hotkey('shift+k')
+                keyboard.remove_hotkey(self.toggle_hotkey)
             except:
                 pass
         self.root.destroy()
