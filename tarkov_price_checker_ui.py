@@ -560,15 +560,17 @@ class TarkovPriceCheckerUI:
             # Get mouse position
             mouse_x, mouse_y = self.mouse_controller.position
             
-            # Take a focused screenshot around the mouse to capture just the tooltip
-            # Tooltips appear very close to the cursor (usually right and slightly above)
-            capture_x = max(0, mouse_x - 50)
-            capture_y = max(0, mouse_y - 100)
-            capture_width = 400
-            capture_height = 200
+            # Take a small screenshot exactly where the tooltip appears
+            # Tarkov tooltips consistently appear to the right and slightly above the cursor
+            # Typical tooltip position: ~60-80px right, ~40-60px above cursor
+            # Typical tooltip size: ~150-250px wide, ~25-45px tall
+            capture_x = mouse_x + 55
+            capture_y = mouse_y - 50
+            capture_width = 260
+            capture_height = 50
             
             region = (capture_x, capture_y, capture_width, capture_height)
-            filepath = self.take_screenshot(region=region, filename="full_capture.png")
+            filepath = self.take_screenshot(region=region, filename="tooltip_capture.png")
             self.log(f"✓ Screenshot saved: {filepath}", '#00ff00')
             
             # Use OCR to detect item name (always enabled)
@@ -670,96 +672,21 @@ class TarkovPriceCheckerUI:
             if not self.initialize_ocr():
                 return None
             
-            # Load the screenshot
+            # Load the screenshot - this should already be just the tooltip
             img = cv2.imread(image_path)
             if img is None:
                 self.log("✗ Could not load screenshot", '#ff0000')
                 return None
             
+            # Since we captured exactly where the tooltip is, just use the whole image
+            roi = img
+            
+            # Save for debugging
+            debug_path = os.path.join(self.screenshots_dir, "last_ocr_region.png")
+            cv2.imwrite(debug_path, roi)
+            self.log(f"✓ Using captured tooltip region", '#00ffff')
+            
             # Convert to grayscale
-            gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
-            
-            # Detect tooltip using simple approach: find dark rectangles with white borders
-            # Convert to grayscale for edge detection
-            edges = cv2.Canny(gray, 50, 150)
-            
-            # Find contours from edges
-            contours, _ = cv2.findContours(edges, cv2.RETR_LIST, cv2.CHAIN_APPROX_SIMPLE)
-            
-            # Look for rectangular tooltip boxes
-            tooltip_roi = None
-            best_tooltip = None
-            
-            for contour in contours:
-                # Approximate contour to polygon
-                epsilon = 0.02 * cv2.arcLength(contour, True)
-                approx = cv2.approxPolyDP(contour, epsilon, True)
-                
-                # Looking for rectangles (4 corners)
-                if len(approx) >= 4:
-                    x, y, w, h = cv2.boundingRect(contour)
-                    area = w * h
-                    
-                    # Tooltip constraints: small, rectangular, not too narrow
-                    # Typical: 100-250px wide, 20-50px tall
-                    if (80 < w < 300 and 18 < h < 60 and 500 < area < 10000):
-                        aspect_ratio = w / h
-                        if 1.8 < aspect_ratio < 12:
-                            # Check if interior is dark
-                            roi_check = gray[y:y+h, x:x+w]
-                            mean_val = np.mean(roi_check)
-                            
-                            # Dark interior (tooltip background)
-                            if mean_val < 60:
-                                # Check border for brightness
-                                if y > 0 and x > 0:
-                                    # Sample pixels just outside the box
-                                    top_border = gray[max(0, y-1), x:x+w] if y > 0 else []
-                                    left_border = gray[y:y+h, max(0, x-1)] if x > 0 else []
-                                    border_brightness = 0
-                                    if len(top_border) > 0:
-                                        border_brightness = max(border_brightness, np.mean(top_border))
-                                    if len(left_border) > 0:
-                                        border_brightness = max(border_brightness, np.mean(left_border))
-                                    
-                                    # Bright border indicates tooltip
-                                    if border_brightness > 100:
-                                        score = area * (255 - mean_val) * border_brightness
-                                        if best_tooltip is None or score > best_tooltip['score']:
-                                            best_tooltip = {
-                                                'score': score,
-                                                'x': x, 'y': y, 'w': w, 'h': h,
-                                                'mean': mean_val
-                                            }
-            
-            # Extract the detected tooltip
-            if best_tooltip:
-                x, y, w, h = best_tooltip['x'], best_tooltip['y'], best_tooltip['w'], best_tooltip['h']
-                # Add padding to exclude border
-                padding = 5
-                tooltip_roi = (
-                    max(0, x + padding),
-                    max(0, y + padding),
-                    max(1, w - 2*padding),
-                    max(1, h - 2*padding)
-                )
-                self.log(f"✓ Found tooltip: {w}x{h}px, darkness={255-best_tooltip['mean']:.0f}", '#00ffff')
-            
-            # If we found a tooltip box, extract that region
-            if tooltip_roi:
-                x, y, w, h = tooltip_roi
-                roi = img[y:y+h, x:x+w]
-                
-                # Save for debugging
-                debug_path = os.path.join(self.screenshots_dir, "last_ocr_region.png")
-                cv2.imwrite(debug_path, roi)
-                self.log(f"✓ Detected tooltip box at ({x}, {y}) size {w}x{h}", '#00ffff')
-            else:
-                # Fallback: use the full image
-                self.log("⚠ No tooltip box detected, using full image", '#ff9800')
-                roi = img
-            
-            # Convert ROI to grayscale
             gray = cv2.cvtColor(roi, cv2.COLOR_BGR2GRAY)
             
             # Apply thresholding to make text more readable
