@@ -1,4 +1,4 @@
-# WABBAJACK TARKOV PRICE CHECKER
+# TARKOV TAG SCANNER
 
 <div align="center">
 
@@ -6,7 +6,7 @@
 ![Python](https://img.shields.io/badge/python-3.8+-00ff41?style=for-the-badge&logo=python)
 ![License](https://img.shields.io/badge/license-MIT-00ff41?style=for-the-badge)
 
-**Real-time price checking for Escape from Tarkov items with OCR detection**
+**Real-time price tag scanning for Escape from Tarkov items with OCR detection**
 
 [Features](#features) • [Installation](#installation) • [Usage](#usage) • [Hotkeys](#hotkeys) • [FAQ](#faq)
 
@@ -19,15 +19,14 @@
 ## Features
 
 - **OCR Item Detection** - Automatically detects item names from your screen
-- **Instant Price Lookup** - Real-time prices from Tarkov Market API
-- **Multiple Trigger Options** - Keyboard hotkey or mouse side button
+- **Instant Price Lookup** - Real-time prices from tarkov.dev API
+- **PVP/PVE Mode Toggle** - Switch between regular and PVE economy data
 - **Custom Hotkeys** - Configure your own hotkey preferences
-- **Price Per Slot** - Calculate efficiency for inventory management
+- **Price Per Slot** - Calculate loot efficiency for inventory management
 - **Matrix-Themed UI** - Sleek dark green/black interface
 - **No Admin Required** - Works without administrator privileges
-- **Lightweight** - Minimal resource usage
 - **No API Key** - Uses free tarkov.dev GraphQL API
-- **Real-time Data** - Community-driven, constantly updated
+- **Loading Screen** - Shows progress during first-time OCR setup
 
 ---
 
@@ -35,7 +34,7 @@
 
 ### Download Release Build
 
-1. Download `WabbajackTarkovPriceChecker.exe` from [Releases](../../releases)
+1. Download `TarkovTagScanner.exe` from [Releases](../../releases)
 2. Run the executable
 3. Click **[ACTIVATE]** or configure your hotkey
 4. Hover over items in Tarkov and trigger your hotkey
@@ -49,17 +48,21 @@
 ### Initial Setup
 
 1. **Launch the application**
-   - Double-click `WabbajackTarkovPriceChecker.exe`
+   - Double-click `TarkovTagScanner.exe`
 
 2. **First Run**
-   - OCR models will download automatically (~100MB)
-   - This only happens once
+   - Loading screen appears while OCR models download (~100MB)
+   - This only happens once and takes up to 60 seconds
 
-3. **Configure Hotkey (Optional)**
+3. **Select Game Mode**
+   - Choose **PVP** for regular Tarkov or **PVE** for PVE mode economy
+   - Mode affects price data from API
+
+4. **Configure Hotkey (Optional)**
    - Click **[CONFIGURE HOTKEY]** to set your preferred hotkey
    - Default: Shift+K to activate, 8 to capture
 
-4. **Activate System**
+5. **Activate System**
    - Click **[ACTIVATE]** button or press your toggle hotkey
    - Status will change to ">>> SYSTEM ACTIVE"
 
@@ -132,13 +135,6 @@ The OCR capture region is optimized for Tarkov's default UI. If items aren't det
 
 It's as safe as using a second monitor with a price website.
 
-### Why do I need admin privileges for keyboard hotkeys?
-
-Windows requires admin rights for global keyboard hooks. However:
-- The mouse side button works **without admin**
-- You can run as admin to enable keyboard hotkeys
-- Or just use the mouse side button
-
 ### The OCR isn't detecting items correctly
 
 Common fixes:
@@ -177,13 +173,14 @@ This uses the free **tarkov.dev GraphQL API** maintained by The Hideout communit
 ## Troubleshooting
 
 ### Application won't start
-- Ensure Python 3.8+ is installed
-- Check all dependencies are installed: `pip install -r requirements.txt`
-- Try running as administrator
+- Make sure you downloaded from official releases
+- Check that OCR models have space to download (~200MB)
+- Try running the exe again - first run takes longer
 
 ### OCR not working
-- First run requires internet to download models
-- Check `screenshots/` folder for captured images
+- First run shows loading screen while models download
+- Ensure internet connection during first run
+- Check `screenshots/` folder in temp directory for captured images
 - Ensure enough disk space (~200MB)
 
 ### Prices not loading
@@ -240,7 +237,7 @@ Your support helps keep the project maintained and updated!
 
 <div align="center">
 
-**WABBAJACK - Making Tarkov Trading Easier**
+**TARKOV TAG SCANNER - Instant Price Checking**
 
 [Report Bug](../../issues) • [Request Feature](../../issues) • [Buy Me a Coffee](https://www.buymeacoffee.com/allisteras)
 

@@ -71,7 +71,7 @@ class TarkovPriceCheckerUI:
         
         # Create main window
         self.root = tk.Tk()
-        self.root.title("Wabbajack Tarkov Price Checker")
+        self.root.title("Tarkov Tag Scanner")
         self.root.geometry("900x800")
         self.root.configure(bg='#000000')
         
@@ -99,7 +99,7 @@ class TarkovPriceCheckerUI:
         # Loading content
         tk.Label(
             self.loading_window,
-            text="WABBAJACK INITIALIZING...",
+            text="TARKOV TAG SCANNER INITIALIZING...",
             font=("Courier New", 14, "bold"),
             bg='#000000',
             fg='#00ff41'
@@ -155,8 +155,8 @@ class TarkovPriceCheckerUI:
         
         title_label = tk.Label(
             title_frame,
-            text="⚡ WABBAJACK ⚡",
-            font=("Courier New", 24, "bold"),
+            text="🏷️ TARKOV TAG SCANNER 🏷️",
+            font=("Courier New", 22, "bold"),
             bg='#000000',
             fg='#00ff41'
         )
@@ -164,8 +164,8 @@ class TarkovPriceCheckerUI:
         
         subtitle_label = tk.Label(
             title_frame,
-            text="TARKOV PRICE CHECKER",
-            font=("Courier New", 14, "bold"),
+            text="INSTANT PRICE TAG SCANNING",
+            font=("Courier New", 11, "bold"),
             bg='#000000',
             fg='#00ff41'
         )
@@ -379,7 +379,7 @@ class TarkovPriceCheckerUI:
         # Instructions
         instructions = """
 ╔════════════════════════════════════════════════════════════════╗
-║              WABBAJACK TARKOV PRICE CHECKER v1.0              ║
+║                 TARKOV TAG SCANNER v1.0                       ║
 ╚════════════════════════════════════════════════════════════════╝
 
 >>> INITIALIZATION PROTOCOL:

@@ -27,7 +27,7 @@ jobs:
         
     - name: Build executable
       run: |
-        pyinstaller --onefile --windowed --name=WabbajackTarkovPriceChecker --collect-all easyocr tarkov_price_checker_ui.py
+        pyinstaller --onefile --windowed --name=TarkovTagScanner --collect-all easyocr tarkov_price_checker_ui.py
       
     - name: Get version from tag
       id: get_version
@@ -43,28 +43,29 @@ jobs:
       if: startsWith(github.ref, 'refs/tags/')
       uses: softprops/action-gh-release@v1
       with:
-        files: dist/WabbajackTarkovPriceChecker.exe
+        files: dist/TarkovTagScanner.exe
         body: |
-          # ⚡ Wabbajack Tarkov Price Checker ${{ steps.get_version.outputs.VERSION }}
+          # 🏷️ Tarkov Tag Scanner ${{ steps.get_version.outputs.VERSION }}
           
           ## Download
-          Download `WabbajackTarkovPriceChecker.exe` below and run it!
+          Download `TarkovTagScanner.exe` below and run it!
           
           ## Features
-          - 🎯 OCR Item Detection
-          - ⚡ Instant Price Lookup with Tarkov.dev API
-          - 🖱️ Multiple Trigger Options (8 key, Mouse Side Button)
-          - 📊 Price Per Slot Calculation
-          - 🎨 Matrix-Themed UI
+          - OCR Item Detection with loading screen
+          - Instant Price Lookup with Tarkov.dev API
+          - PVP/PVE Mode Toggle
+          - Custom Hotkey Configuration
+          - Price Per Slot Calculation
+          - Matrix-Themed UI
           
           ## First Run
-          - OCR models will download automatically (~100MB)
+          - Loading screen shows while OCR models download (~100MB, up to 60 seconds)
           - No API key required
-          - No admin privileges needed (for mouse button)
+          - No admin privileges needed
           
           ## Hotkeys
-          - **Shift+K**: Activate/Deactivate
-          - **8**: Capture item at cursor
+          - **Shift+K**: Activate/Deactivate (configurable)
+          - **8**: Capture item at cursor (configurable)
           - **Mouse Side Button**: Instant capture
           
           See [README](https://github.com/${{ github.repository }}) for full documentation.
@@ -77,5 +78,5 @@ jobs:
       if: "!startsWith(github.ref, 'refs/tags/')"
       uses: actions/upload-artifact@v4
       with:
-        name: WabbajackTarkovPriceChecker-dev
-        path: dist/WabbajackTarkovPriceChecker.exe
+        name: TarkovTagScanner-dev
+        path: dist/TarkovTagScanner.exe
