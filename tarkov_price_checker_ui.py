@@ -701,19 +701,20 @@ class TarkovPriceCheckerUI:
             contours, _ = cv2.findContours(dark_mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
             
             # Find the best tooltip candidate
-            tooltip_roi = None
-            max_score = 0
+            # Tooltips are small compact boxes, not large inventory grids
+            tooltip_candidates = []
             
             for contour in contours:
                 area = cv2.contourArea(contour)
-                if area > 800:  # Minimum size
+                # Tooltips are typically 1000-5000 pixels, not huge grids
+                if 800 < area < 15000:
                     x, y, w, h = cv2.boundingRect(contour)
                     
-                    # Tooltips are wider than tall
+                    # Tooltips are wider than tall, but not extremely wide
                     aspect_ratio = w / h if h > 0 else 0
-                    if 1.2 < aspect_ratio < 15 and w > 60 and h > 12:
+                    # Typical tooltip: 2:1 to 6:1 ratio, 80-300px wide, 15-60px tall
+                    if 1.5 < aspect_ratio < 8 and 60 < w < 350 and 15 < h < 80:
                         # Check if this region has bright border
-                        # Sample border pixels
                         border_region = bright_mask[max(0, y-2):min(bright_mask.shape[0], y+h+2), 
                                                     max(0, x-2):min(bright_mask.shape[1], x+w+2)]
                         border_brightness = np.sum(border_region) / border_region.size if border_region.size > 0 else 0
@@ -722,19 +723,35 @@ class TarkovPriceCheckerUI:
                         interior = v_channel[y:y+h, x:x+w]
                         interior_darkness = 255 - np.mean(interior)
                         
-                        # Score: prefer large, dark interiors with bright borders
-                        score = area * interior_darkness * (1 + border_brightness / 100)
-                        
-                        if score > max_score:
-                            max_score = score
-                            # Add padding inside border
-                            padding = 4
-                            tooltip_roi = (
-                                max(0, x + padding),
-                                max(0, y + padding),
-                                max(1, w - 2*padding),
-                                max(1, h - 2*padding)
-                            )
+                        # Must have good border brightness (>15%) and be very dark inside
+                        if border_brightness > 15 and interior_darkness > 180:
+                            # Score: prefer smaller tooltips near typical size with good borders
+                            # Penalize very large regions
+                            size_score = 1.0 / (1.0 + abs(area - 3000) / 3000)
+                            score = size_score * interior_darkness * border_brightness
+                            
+                            tooltip_candidates.append({
+                                'score': score,
+                                'roi': (x, y, w, h),
+                                'area': area
+                            })
+            
+            # Sort by score and pick the best
+            tooltip_roi = None
+            if tooltip_candidates:
+                tooltip_candidates.sort(key=lambda x: x['score'], reverse=True)
+                best = tooltip_candidates[0]
+                x, y, w, h = best['roi']
+                
+                # Add padding inside border
+                padding = 4
+                tooltip_roi = (
+                    max(0, x + padding),
+                    max(0, y + padding),
+                    max(1, w - 2*padding),
+                    max(1, h - 2*padding)
+                )
+                self.log(f"Found {len(tooltip_candidates)} candidates, selected area={best['area']:.0f}", '#00ffff')
             
             # If we found a tooltip box, extract that region
             if tooltip_roi:
