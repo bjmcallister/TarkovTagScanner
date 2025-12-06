@@ -6,19 +6,27 @@ Press Ctrl+Shift+P to capture screen and automatically detect item names
 import pyautogui
 import requests
 import json
-from datetime import datetime
+from datetime import datetime, timedelta
 import os
 from PIL import Image
 import time
 import tkinter as tk
 import tkinter.simpledialog
-from tkinter import ttk, scrolledtext, messagebox
+from tkinter import ttk, scrolledtext, messagebox, colorchooser
 import keyboard
 import threading
 import easyocr
 import cv2
 import numpy as np
 from pynput import mouse
+import pickle
+from packaging import version
+try:
+    from pystray import Icon, Menu, MenuItem
+    from PIL import Image as PILImage
+    TRAY_AVAILABLE = True
+except ImportError:
+    TRAY_AVAILABLE = False
 
 
 class TarkovPriceCheckerUI:
@@ -65,6 +73,24 @@ class TarkovPriceCheckerUI:
         self.ocr_reader = None
         self.ocr_enabled = True
         self.ocr_loading = False
+        
+        # Cache for OCR results (item_name: {data, timestamp})
+        self.ocr_cache = {}
+        self.cache_duration = timedelta(minutes=30)  # Cache for 30 minutes
+        
+        # Settings
+        self.settings_file = os.path.join(user_temp, "WabbajackTarkov", "settings.pkl")
+        self.current_version = "1.1.0"
+        self.settings = {
+            'theme_color': '#00ff41',
+            'bg_color': '#000000',
+            'font_size': 10,
+            'overlay_font_size': 11
+        }
+        self.load_settings()
+        
+        # System tray
+        self.tray_icon = None
         
         # Overlay window for price display
         self.overlay_window = None
@@ -293,6 +319,37 @@ class TarkovPriceCheckerUI:
             command=self.update_game_mode
         )
         pve_radio.pack(side='left', padx=(0, 15))
+        
+        # Settings button
+        settings_btn = tk.Button(
+            button_frame,
+            text="[ SETTINGS ]",
+            command=self.open_settings,
+            font=("Courier New", 9, "bold"),
+            bg='#003300',
+            fg='#00ff41',
+            padx=10,
+            pady=10,
+            bd=2,
+            cursor='hand2'
+        )
+        settings_btn.pack(side='left', padx=5)
+        
+        # Minimize to tray button
+        if TRAY_AVAILABLE:
+            tray_btn = tk.Button(
+                button_frame,
+                text="[ MINIMIZE ]",
+                command=self.minimize_to_tray,
+                font=("Courier New", 9, "bold"),
+                bg='#003300',
+                fg='#00ff41',
+                padx=10,
+                pady=10,
+                bd=2,
+                cursor='hand2'
+            )
+            tray_btn.pack(side='left', padx=5)
         
         # Manual search frame
         search_frame = tk.LabelFrame(
@@ -745,6 +802,15 @@ class TarkovPriceCheckerUI:
         """Search for an item and display results using GraphQL"""
         self.update_status(f"Searching for {item_name}...", '#ffff00')
         
+        # Check cache first
+        cache_key = f"{item_name}_{self.game_mode}"
+        cached_data = self.get_cached_item(cache_key)
+        if cached_data:
+            self.log(">>> Using cached data", '#00ffff')
+            self.display_item_price(cached_data)
+            self.update_status("Search complete (cached)", '#00ff41')
+            return
+        
         try:
             # Determine game mode for API query
             game_mode = 'regular' if self.game_mode == 'PVP' else 'pve'
@@ -791,6 +857,8 @@ class TarkovPriceCheckerUI:
             
             if data and 'data' in data and data['data']['itemsByName'] and len(data['data']['itemsByName']) > 0:
                 item = data['data']['itemsByName'][0]
+                # Cache the result
+                self.cache_item(cache_key, item)
                 self.display_item_price(item)
                 self.update_status("Search complete", '#00ff41')
             else:
@@ -874,6 +942,9 @@ class TarkovPriceCheckerUI:
         """Start the GUI application"""
         # Test API connection on startup
         self.test_connection()
+        
+        # Check for updates in background
+        threading.Thread(target=self.check_for_updates, daemon=True).start()
         
         # Start the main loop
         self.root.protocol("WM_DELETE_WINDOW", self.on_closing)
@@ -1211,8 +1282,238 @@ class TarkovPriceCheckerUI:
         """Handle toggle hotkey press"""
         self.toggle_hotkey_method()
     
+    def load_settings(self):
+        """Load settings from file"""
+        try:
+            if os.path.exists(self.settings_file):
+                with open(self.settings_file, 'rb') as f:
+                    saved_settings = pickle.load(f)
+                    self.settings.update(saved_settings)
+        except Exception as e:
+            self.log(f">>> Could not load settings: {e}", '#ff9800')
+    
+    def save_settings(self):
+        """Save settings to file"""
+        try:
+            os.makedirs(os.path.dirname(self.settings_file), exist_ok=True)
+            with open(self.settings_file, 'wb') as f:
+                pickle.dump(self.settings, f)
+        except Exception as e:
+            self.log(f">>> Could not save settings: {e}", '#ff0000')
+    
+    def get_cached_item(self, item_name):
+        """Get item from cache if not expired"""
+        if item_name in self.ocr_cache:
+            cached = self.ocr_cache[item_name]
+            if datetime.now() - cached['timestamp'] < self.cache_duration:
+                return cached['data']
+            else:
+                del self.ocr_cache[item_name]
+        return None
+    
+    def cache_item(self, item_name, data):
+        """Cache item data"""
+        self.ocr_cache[item_name] = {
+            'data': data,
+            'timestamp': datetime.now()
+        }
+    
+    def check_for_updates(self):
+        """Check GitHub for new releases"""
+        try:
+            response = requests.get(
+                'https://api.github.com/repos/bjmcallister/TarkovTagScanner/releases/latest',
+                timeout=5
+            )
+            if response.status_code == 200:
+                latest = response.json()
+                latest_version = latest['tag_name'].lstrip('v')
+                
+                if version.parse(latest_version) > version.parse(self.current_version):
+                    self.log(f\"\\n>>> UPDATE AVAILABLE: v{latest_version}\", '#ffff00')
+                    self.log(f\">>> Current version: v{self.current_version}\", '#ffffff')
+                    self.log(f\">>> Download: {latest['html_url']}\", '#00ffff')
+                    
+                    if messagebox.askyesno(\"Update Available\", 
+                        f\"New version v{latest_version} is available!\\n\\nWould you like to download it?\"):
+                        import webbrowser
+                        webbrowser.open(latest['html_url'])
+        except Exception as e:
+            pass  # Silently fail for update check
+    
+    def minimize_to_tray(self):
+        \"\"\"Minimize window to system tray\"\"\"
+        if not TRAY_AVAILABLE:
+            self.root.iconify()
+            return
+        
+        try:
+            self.root.withdraw()
+            
+            if self.tray_icon is None:
+                # Create tray icon
+                icon_image = PILImage.new('RGB', (64, 64), color='black')
+                from PIL import ImageDraw
+                draw = ImageDraw.Draw(icon_image)
+                draw.text((10, 20), \"TTS\", fill='#00ff41')
+                
+                menu = Menu(
+                    MenuItem('Show', self.show_from_tray),
+                    MenuItem('Exit', self.exit_from_tray)
+                )
+                
+                self.tray_icon = Icon(\"TarkovTagScanner\", icon_image, \"Tarkov Tag Scanner\", menu)
+                threading.Thread(target=self.tray_icon.run, daemon=True).start()
+        except Exception as e:
+            self.log(f\">>> Tray icon error: {e}\", '#ff0000')
+            self.root.iconify()
+    
+    def show_from_tray(self):
+        \"\"\"Restore window from tray\"\"\"
+        self.root.after(0, self.root.deiconify)
+    
+    def exit_from_tray(self):
+        \"\"\"Exit from tray icon\"\"\"
+        if self.tray_icon:
+            self.tray_icon.stop()
+        self.root.after(0, self.on_closing)
+    
+    def open_settings(self):
+        \"\"\"Open settings dialog\"\"\"
+        settings_window = tk.Toplevel(self.root)
+        settings_window.title(\"Settings\")
+        settings_window.geometry(\"500x400\")
+        settings_window.configure(bg='#000000')
+        settings_window.transient(self.root)
+        settings_window.grab_set()
+        
+        # Title
+        tk.Label(
+            settings_window,
+            text=\"SETTINGS\",
+            font=(\"Courier New\", 14, \"bold\"),
+            bg='#000000',
+            fg=self.settings['theme_color']
+        ).pack(pady=15)
+        
+        # Theme color
+        theme_frame = tk.Frame(settings_window, bg='#001100', padx=15, pady=10)
+        theme_frame.pack(pady=5, padx=20, fill='x')
+        
+        tk.Label(
+            theme_frame,
+            text=\"Theme Color:\",
+            font=(\"Courier New\", 10, \"bold\"),
+            bg='#001100',
+            fg=self.settings['theme_color']
+        ).pack(side='left')
+        
+        tk.Button(
+            theme_frame,
+            text=\"Choose Color\",
+            command=lambda: self.choose_theme_color(settings_window),
+            font=(\"Courier New\", 9),
+            bg='#003300',
+            fg=self.settings['theme_color']
+        ).pack(side='right', padx=5)
+        
+        # Font size
+        font_frame = tk.Frame(settings_window, bg='#001100', padx=15, pady=10)
+        font_frame.pack(pady=5, padx=20, fill='x')
+        
+        tk.Label(
+            font_frame,
+            text=\"UI Font Size:\",
+            font=(\"Courier New\", 10, \"bold\"),
+            bg='#001100',
+            fg=self.settings['theme_color']
+        ).pack(side='left')
+        
+        font_var = tk.IntVar(value=self.settings['font_size'])
+        font_spin = tk.Spinbox(
+            font_frame,
+            from_=8,
+            to=16,
+            textvariable=font_var,
+            width=5,
+            font=(\"Courier New\", 10),
+            bg='#000000',
+            fg=self.settings['theme_color']
+        )
+        font_spin.pack(side='right', padx=5)
+        
+        # Overlay font size
+        overlay_frame = tk.Frame(settings_window, bg='#001100', padx=15, pady=10)
+        overlay_frame.pack(pady=5, padx=20, fill='x')
+        
+        tk.Label(
+            overlay_frame,
+            text=\"Overlay Font Size:\",
+            font=(\"Courier New\", 10, \"bold\"),
+            bg='#001100',
+            fg=self.settings['theme_color']
+        ).pack(side='left')
+        
+        overlay_var = tk.IntVar(value=self.settings['overlay_font_size'])
+        overlay_spin = tk.Spinbox(
+            overlay_frame,
+            from_=8,
+            to=20,
+            textvariable=overlay_var,
+            width=5,
+            font=(\"Courier New\", 10),
+            bg='#000000',
+            fg=self.settings['theme_color']
+        )
+        overlay_spin.pack(side='right', padx=5)
+        
+        # Buttons
+        button_frame = tk.Frame(settings_window, bg='#000000')
+        button_frame.pack(pady=15)
+        
+        def apply_settings():
+            self.settings['font_size'] = font_var.get()
+            self.settings['overlay_font_size'] = overlay_var.get()
+            self.save_settings()
+            messagebox.showinfo(\"Settings\", \"Settings saved! Restart the app to apply all changes.\")
+            settings_window.destroy()
+        
+        tk.Button(
+            button_frame,
+            text=\"[ SAVE ]\",
+            command=apply_settings,
+            font=(\"Courier New\", 10, \"bold\"),
+            bg='#003300',
+            fg=self.settings['theme_color'],
+            padx=20,
+            pady=8
+        ).pack(side='left', padx=5)
+        
+        tk.Button(
+            button_frame,
+            text=\"[ CANCEL ]\",
+            command=settings_window.destroy,
+            font=(\"Courier New\", 10, \"bold\"),
+            bg='#330000',
+            fg='#ff4444',
+            padx=20,
+            pady=8
+        ).pack(side='left', padx=5)
+    
+    def choose_theme_color(self, parent):
+        \"\"\"Open color chooser for theme\"\"\"
+        color = colorchooser.askcolor(
+            initialcolor=self.settings['theme_color'],
+            parent=parent,
+            title=\"Choose Theme Color\"
+        )
+        if color[1]:
+            self.settings['theme_color'] = color[1]
+            parent.destroy()
+            self.open_settings()  # Reopen with new color
+    
     def on_closing(self):
-        """Handle window closing"""
+        \"\"\"Handle window closing\"\"\"
         if self.overlay_window:
             try:
                 self.overlay_window.destroy()
@@ -1225,6 +1526,9 @@ class TarkovPriceCheckerUI:
                 keyboard.remove_hotkey(self.toggle_hotkey)
             except:
                 pass
+        if self.tray_icon:
+            self.tray_icon.stop()
+        self.save_settings()
         self.root.destroy()
 
 
