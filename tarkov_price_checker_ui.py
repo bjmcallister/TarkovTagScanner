@@ -679,50 +679,62 @@ class TarkovPriceCheckerUI:
             # Convert to grayscale
             gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
             
-            # Detect the black tooltip box with white border
-            # Tarkov tooltips have white/light borders around dark boxes
-            # Use edge detection to find the border
-            edges = cv2.Canny(gray, 100, 200)
+            # Detect the tooltip box using color thresholding
+            # Tarkov tooltips are very dark (near black) with light gray/white borders
             
-            # Dilate edges to connect nearby edge pixels
-            kernel = np.ones((3, 3), np.uint8)
-            edges_dilated = cv2.dilate(edges, kernel, iterations=2)
+            # Convert to HSV for better dark region detection
+            hsv = cv2.cvtColor(img, cv2.COLOR_BGR2HSV)
+            v_channel = hsv[:, :, 2]  # Value channel
             
-            # Find contours from edges
-            contours, _ = cv2.findContours(edges_dilated, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+            # Find very dark regions (tooltip interior is nearly black)
+            _, dark_mask = cv2.threshold(v_channel, 40, 255, cv2.THRESH_BINARY_INV)
+            
+            # Find bright regions (borders are light)
+            _, bright_mask = cv2.threshold(v_channel, 150, 255, cv2.THRESH_BINARY)
+            
+            # Morphological operations to clean up
+            kernel = np.ones((5, 5), np.uint8)
+            dark_mask = cv2.morphologyEx(dark_mask, cv2.MORPH_CLOSE, kernel)
+            dark_mask = cv2.morphologyEx(dark_mask, cv2.MORPH_OPEN, kernel)
+            
+            # Find contours of dark regions
+            contours, _ = cv2.findContours(dark_mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
             
             # Find the best tooltip candidate
-            # Look for rectangular contours with reasonable size
             tooltip_roi = None
             max_score = 0
             
             for contour in contours:
                 area = cv2.contourArea(contour)
-                if area > 1000:  # Minimum size to be considered
+                if area > 800:  # Minimum size
                     x, y, w, h = cv2.boundingRect(contour)
                     
-                    # Check if it's a reasonable tooltip shape
-                    # Tooltips are wider than tall, not too narrow
+                    # Tooltips are wider than tall
                     aspect_ratio = w / h if h > 0 else 0
-                    if 1.5 < aspect_ratio < 10 and w > 80 and h > 15:
-                        # Check if the region has dark background (tooltip characteristic)
-                        roi_check = gray[y:y+h, x:x+w]
-                        mean_brightness = np.mean(roi_check)
+                    if 1.2 < aspect_ratio < 15 and w > 60 and h > 12:
+                        # Check if this region has bright border
+                        # Sample border pixels
+                        border_region = bright_mask[max(0, y-2):min(bright_mask.shape[0], y+h+2), 
+                                                    max(0, x-2):min(bright_mask.shape[1], x+w+2)]
+                        border_brightness = np.sum(border_region) / border_region.size if border_region.size > 0 else 0
                         
-                        # Dark background (tooltip) should have low mean brightness
-                        if mean_brightness < 100:
-                            # Score based on size and darkness
-                            score = area * (100 - mean_brightness)
-                            if score > max_score:
-                                max_score = score
-                                # Add small padding inside the border
-                                padding = 3
-                                tooltip_roi = (
-                                    max(0, x + padding),
-                                    max(0, y + padding),
-                                    max(1, w - 2*padding),
-                                    max(1, h - 2*padding)
-                                )
+                        # Check interior darkness
+                        interior = v_channel[y:y+h, x:x+w]
+                        interior_darkness = 255 - np.mean(interior)
+                        
+                        # Score: prefer large, dark interiors with bright borders
+                        score = area * interior_darkness * (1 + border_brightness / 100)
+                        
+                        if score > max_score:
+                            max_score = score
+                            # Add padding inside border
+                            padding = 4
+                            tooltip_roi = (
+                                max(0, x + padding),
+                                max(0, y + padding),
+                                max(1, w - 2*padding),
+                                max(1, h - 2*padding)
+                            )
             
             # If we found a tooltip box, extract that region
             if tooltip_roi:
