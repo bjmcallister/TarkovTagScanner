@@ -83,6 +83,11 @@ class TarkovPriceCheckerUI:
         self.all_items_cache = None
         self.all_items_timestamp = None
         
+        # Preview mode for capture
+        self.preview_mode = False
+        self.preview_window = None
+        self.preview_update_timer = None
+        
         # Settings
         self.settings_file = os.path.join(user_temp, "WabbajackTarkov", "settings.pkl")
         self.items_cache_file = os.path.join(user_temp, "WabbajackTarkov", "items_cache.pkl")
@@ -558,71 +563,93 @@ class TarkovPriceCheckerUI:
     
     def on_hotkey_triggered(self):
         """Called when the hotkey is pressed"""
-        self.log("\n" + "="*60, '#ffff00')
-        self.log("⚡ Hotkey triggered! Taking screenshot...", '#ffff00')
-        self.update_status("Capturing screenshot...", '#ffff00')
-        
-        # Run in a separate thread to avoid blocking
-        threading.Thread(target=self.capture_and_search, daemon=True).start()
+        if not self.preview_mode:
+            # First press: Show preview rectangle
+            self.log("\n" + "="*60, '#00ff00')
+            self.log("⚡ Preview mode activated - Press hotkey again to capture", '#00ff00')
+            self.show_preview_rectangle()
+        else:
+            # Second press: Capture the area
+            self.log("⚡ Capturing...", '#ffff00')
+            self.hide_preview_rectangle()
+            self.update_status("Capturing screenshot...", '#ffff00')
+            # Run in a separate thread to avoid blocking
+            threading.Thread(target=self.capture_and_search, daemon=True).start()
     
-    def detect_tooltip_bounds(self, screenshot, mouse_x, mouse_y):
-        """Detect the tooltip box boundaries automatically"""
+    def show_preview_rectangle(self):
+        """Show a green rectangle overlay to preview capture area"""
         try:
-            # Convert to grayscale
-            gray = cv2.cvtColor(screenshot, cv2.COLOR_BGR2GRAY)
+            # Create transparent overlay window
+            self.preview_window = tk.Toplevel(self.root)
+            self.preview_window.attributes('-topmost', True)
+            self.preview_window.attributes('-alpha', 0.3)  # Semi-transparent
+            self.preview_window.overrideredirect(True)  # No window decorations
             
-            # Tarkov tooltips have dark background (around 20-40 brightness)
-            # with white border (around 200-255 brightness)
-            # Apply threshold to find dark regions
-            _, dark_mask = cv2.threshold(gray, 80, 255, cv2.THRESH_BINARY_INV)
+            # Tooltip-sized dimensions (same as actual capture)
+            capture_width = 350
+            capture_height = 80
             
-            # Find contours of dark regions
-            contours, _ = cv2.findContours(dark_mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+            # Initial position
+            mouse_x, mouse_y = self.mouse_controller.position
+            capture_x = mouse_x + 15
+            capture_y = mouse_y - 60
             
-            if not contours:
-                return None
+            self.preview_window.geometry(f"{capture_width}x{capture_height}+{capture_x}+{capture_y}")
             
-            # Calculate expected tooltip position relative to mouse in screenshot
-            # Mouse is at (mouse_x, mouse_y) in screen coords
-            # We took screenshot starting at mouse_x-200, mouse_y-200
-            mouse_in_screen_x = 200
-            mouse_in_screen_y = 200
+            # Green border frame
+            border_frame = tk.Frame(self.preview_window, bg='#00ff00', bd=0)
+            border_frame.pack(fill='both', expand=True, padx=3, pady=3)
             
-            # Find the contour that:
-            # 1. Is reasonably large (tooltip is at least 150x30 pixels)
-            # 2. Is near where we expect the tooltip (slightly right and above cursor)
-            best_contour = None
-            best_score = float('inf')
+            # Transparent inner area
+            inner_frame = tk.Frame(border_frame, bg='black')
+            inner_frame.pack(fill='both', expand=True)
             
-            for contour in contours:
-                x, y, w, h = cv2.boundingRect(contour)
-                
-                # Tooltip size constraints
-                if w < 150 or h < 20:  # Too small
-                    continue
-                if w > 500 or h > 200:  # Too large
-                    continue
-                
-                # Expected position: slightly to the right and above cursor
-                # Adjusted to be more left: +10 to +50 pixels right, -80 to -40 pixels up
-                expected_x = mouse_in_screen_x + 30  # Shifted left from 60
-                expected_y = mouse_in_screen_y - 60  # Slightly adjusted
-                
-                # Calculate distance from expected position
-                center_x = x + w/2
-                center_y = y + h/2
-                distance = ((center_x - expected_x)**2 + (center_y - expected_y)**2)**0.5
-                
-                # Prefer tooltips closer to expected position
-                if distance < best_score:
-                    best_score = distance
-                    best_contour = (x, y, w, h)
+            self.preview_mode = True
             
-            return best_contour
+            # Start updating position to follow mouse
+            self.update_preview_position()
             
         except Exception as e:
-            self.log(f"⚠ Tooltip detection error: {e}", '#ff9800')
-            return None
+            self.log(f"✗ Preview error: {e}", '#ff0000')
+    
+    def update_preview_position(self):
+        """Update preview rectangle position to follow mouse"""
+        if self.preview_mode and self.preview_window:
+            try:
+                # Get current mouse position
+                mouse_x, mouse_y = self.mouse_controller.position
+                
+                # Calculate new position (same offset as capture)
+                capture_x = mouse_x + 15
+                capture_y = mouse_y - 60
+                
+                # Update window position
+                self.preview_window.geometry(f"+{capture_x}+{capture_y}")
+                
+                # Schedule next update (60 FPS)
+                self.preview_update_timer = self.root.after(16, self.update_preview_position)
+            except:
+                pass
+    
+    def hide_preview_rectangle(self):
+        """Hide the preview rectangle"""
+        # Cancel update timer
+        if self.preview_update_timer:
+            try:
+                self.root.after_cancel(self.preview_update_timer)
+            except:
+                pass
+            self.preview_update_timer = None
+        
+        # Destroy window
+        if self.preview_window:
+            try:
+                self.preview_window.destroy()
+            except:
+                pass
+            self.preview_window = None
+        
+        self.preview_mode = False
     
     def capture_and_search(self):
         """Capture screenshot and search for item"""
@@ -633,43 +660,15 @@ class TarkovPriceCheckerUI:
             # Get mouse position
             mouse_x, mouse_y = self.mouse_controller.position
             
-            # Take initial screenshot with generous margin to find tooltip
-            # This captures a larger area to ensure we get the entire tooltip
-            search_x = mouse_x - 200
-            search_y = mouse_y - 200
-            search_width = 600
-            search_height = 400
+            # Capture tooltip-sized area near cursor
+            capture_width = 350
+            capture_height = 80
+            capture_x = mouse_x + 15   # Slightly to the right
+            capture_y = mouse_y - 60   # Above cursor
             
-            region = (search_x, search_y, search_width, search_height)
-            temp_filepath = self.take_screenshot(region=region, filename="tooltip_search.png")
-            
-            # Load the screenshot for processing
-            search_img = cv2.imread(temp_filepath)
-            
-            # Detect tooltip boundaries
-            tooltip_bounds = self.detect_tooltip_bounds(search_img, mouse_x, mouse_y)
-            
-            if tooltip_bounds:
-                # Extract just the tooltip region
-                x, y, w, h = tooltip_bounds
-                tooltip_img = search_img[y:y+h, x:x+w]
-                
-                # Save the extracted tooltip
-                filepath = os.path.join(self.screenshots_dir, "tooltip_capture.png")
-                cv2.imwrite(filepath, tooltip_img)
-                
-                self.log(f"✓ Detected tooltip: {w}x{h}px at position ({x},{y})", '#00ff00')
-            else:
-                # Fallback: use fixed position if detection fails
-                self.log("⚠ Auto-detection failed, using fixed position", '#ff9800')
-                capture_x = mouse_x + 20  # Shifted more left
-                capture_y = mouse_y - 60  # Adjusted up slightly
-                capture_width = 300  # Slightly wider
-                capture_height = 50  # Slightly taller
-                
-                region = (capture_x, capture_y, capture_width, capture_height)
-                filepath = self.take_screenshot(region=region, filename="tooltip_capture.png")
-                self.log(f"✓ Screenshot saved: {filepath}", '#00ff00')
+            region = (capture_x, capture_y, capture_width, capture_height)
+            filepath = self.take_screenshot(region=region, filename="tooltip_capture.png")
+            self.log(f"✓ Captured {capture_width}x{capture_height}px around cursor", '#00ff00')
             
             # Use OCR to detect item name (always enabled)
             self.log("🔍 Detecting item name from screenshot...", '#ffff00')
@@ -681,8 +680,8 @@ class TarkovPriceCheckerUI:
                 self.log(f"✓ Detected item name: '{item_name}'", '#00ff00')
                 self.search_item(item_name)
             else:
-                self.log("⚠ Could not detect item name, please enter manually", '#ff9800')
-                self.root.after(0, self.prompt_for_item_name)
+                self.log("⚠ Could not detect item name from screenshot", '#ff9800')
+                self.update_status("No text detected", '#ff0000')
             
         except Exception as e:
             self.log(f"✗ Error: {e}", '#ff0000')
@@ -791,8 +790,8 @@ class TarkovPriceCheckerUI:
             # Tarkov uses light text on dark background
             _, thresh = cv2.threshold(gray, 0, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU)
             
-            # Perform OCR on the threshold version (best for Tarkov's light text on dark background)
-            results = self.ocr_reader.readtext(thresh, detail=0)
+            # Perform OCR with position data (detail=1 returns bbox, text, confidence)
+            results = self.ocr_reader.readtext(thresh, detail=1)
             
             if results:
                 # Filter out UI elements
@@ -802,10 +801,16 @@ class TarkovPriceCheckerUI:
                     'context menu', 'fold', 'unfold', 'sort', 'filter by'
                 ]
                 
-                # Filter and deduplicate results
-                filtered_results = []
+                # Mouse position in the captured image (we captured 350x80 with mouse at x+15, y-60)
+                # So mouse is at approximately x=-15, y=60 relative to capture origin
+                mouse_in_capture_x = -15  # 15 pixels to the left of capture area
+                mouse_in_capture_y = 60   # 60 pixels below capture area top
+                
+                # Filter and find text closest to mouse position
+                text_candidates = []
                 seen = set()
-                for text in results:
+                
+                for (bbox, text, confidence) in results:
                     text_clean = text.strip()
                     text_lower = text_clean.lower()
                     
@@ -817,15 +822,30 @@ class TarkovPriceCheckerUI:
                     if len(text_clean) < 3:
                         continue
                     
+                    # Calculate center position of this text
+                    center_x = sum([point[0] for point in bbox]) / 4
+                    center_y = sum([point[1] for point in bbox]) / 4
+                    
+                    # Calculate distance from mouse position
+                    distance = ((center_x - mouse_in_capture_x)**2 + (center_y - mouse_in_capture_y)**2)**0.5
+                    
                     seen.add(text_lower)
-                    filtered_results.append(text_clean)
+                    text_candidates.append({
+                        'text': text_clean,
+                        'distance': distance,
+                        'confidence': confidence
+                    })
                 
-                if not filtered_results:
+                if not text_candidates:
                     self.log("⚠ No valid text detected in screenshot", '#ff9800')
                     return None
                 
-                # Combine all parts with space (handles multi-line item names)
-                item_name = ' '.join(filtered_results)
+                # Sort by distance (closest first)
+                text_candidates.sort(key=lambda x: x['distance'])
+                
+                # Take the closest text as the item name
+                item_name = text_candidates[0]['text']
+                self.log(f"✓ Selected closest text (distance: {text_candidates[0]['distance']:.1f}px)", '#00ffff')
                 
                 # Fix common OCR misreads
                 item_name = self.fix_ocr_errors(item_name)
