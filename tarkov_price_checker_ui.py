@@ -778,9 +778,6 @@ class TarkovPriceCheckerUI:
             # Since we captured exactly where the tooltip is, just use the whole image
             roi = img
             
-            # Save for debugging
-            debug_path = os.path.join(self.screenshots_dir, "last_ocr_region.png")
-            cv2.imwrite(debug_path, roi)
             self.log(f"✓ Using captured tooltip region", '#00ffff')
             
             # Convert to grayscale
