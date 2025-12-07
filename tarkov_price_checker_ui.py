@@ -863,20 +863,6 @@ class TarkovPriceCheckerUI:
             self.log(traceback.format_exc(), '#ff0000')
             return None
     
-    def prompt_for_item_name(self):
-        """Prompt user to enter item name after screenshot"""
-        item_name = tkinter.simpledialog.askstring(
-            "Item Name",
-            "Enter the item name to search:",
-            parent=self.root
-        )
-        
-        if item_name:
-            self.search_item(item_name)
-        else:
-            self.log("Search cancelled.", '#ff9800')
-            self.update_status("Ready", '#ffffff')
-    
     def manual_search(self):
         """Search for an item manually"""
         item_name = self.search_entry.get().strip()
