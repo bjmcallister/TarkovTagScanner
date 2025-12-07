@@ -91,7 +91,7 @@ class TarkovPriceCheckerUI:
         # Settings
         self.settings_file = os.path.join(user_temp, "WabbajackTarkov", "settings.pkl")
         self.items_cache_file = os.path.join(user_temp, "WabbajackTarkov", "items_cache.pkl")
-        self.current_version = "1.3.1"
+        self.current_version = "1.3.2"
         self.settings = {
             'theme_color': '#00ff41',
             'bg_color': '#000000',
